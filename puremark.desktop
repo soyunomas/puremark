@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=PureMark
+Comment=Elegant Markdown Viewer
+Exec=puremark %f
+Icon=text-markdown
+Terminal=false
+Type=Application
+Categories=Utility;TextEditor;
+MimeType=text/markdown;text/x-markdown;
+StartupNotify=true
