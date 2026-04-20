@@ -56,7 +56,7 @@ sudo dpkg -r puremark
 
 ```bash
 # Debian / Ubuntu / Mint
-sudo apt install libwebkit2gtk-4.0-dev libgtk-3-dev
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 ```
 
 Verify your environment:
