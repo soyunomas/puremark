@@ -13,7 +13,7 @@ help: ## ❓ Muestra este menú de ayuda
 
 build: ## 🔨 Compila la aplicación para producción
 	@echo "🔨 Construyendo $(APP_NAME)..."
-	wails build
+	wails build -tags webkit2_41
 
 install: build ## 📦 Compila e instala la aplicación en el sistema local
 	@echo "📦 Instalando binario..."
