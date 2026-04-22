@@ -3,7 +3,7 @@ set -euo pipefail
 
 # ─── Config ───────────────────────────────────────────
 APP_NAME="puremark"
-VERSION="1.0.0"
+VERSION="1.1.0"
 ARCH="amd64"
 MAINTAINER="soyunomas <https://github.com/soyunomas/puremark>"
 DESCRIPTION="PureMark — Elegant Markdown Viewer for Linux"
@@ -82,7 +82,7 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
-Depends: libwebkit2gtk-4.1-0 | libwebkit2gtk-4.1-0 | libwebkit2gtk-4.0-37, libgtk-3-0
+Depends: libwebkit2gtk-4.0-37, libgtk-3-0
 Installed-Size: ${INSTALLED_SIZE}
 Maintainer: ${MAINTAINER}
 Description: ${DESCRIPTION}
