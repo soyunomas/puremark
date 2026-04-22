@@ -1,7 +1,8 @@
 import './style.css';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { ReadFileAt, SaveFileAt, OpenFilesDialog, GetStartupPaths, GetUserHome } from '../wailsjs/go/main/App';
+import hljs from 'highlight.js';
+import { ReadFileAt, SaveFileAt, OpenFilesDialog, GetStartupPaths, GetUserHome, GetFileStats } from '../wailsjs/go/main/App';
 import { Quit, WindowMinimise, WindowToggleMaximise, WindowFullscreen, WindowUnfullscreen, OnFileDrop } from '../wailsjs/runtime/runtime';
 
 // ─── i18n ───────────────────────────────────────────────
@@ -16,17 +17,27 @@ const translations: Record<Locale, Record<string, string>> = {
     'menu.view': 'Ver', 'menu.view.zoomIn': 'Acercar', 'menu.view.zoomOut': 'Alejar',
     'menu.view.zoomReset': 'Restablecer zoom', 'menu.view.themeDark': 'Tema oscuro',
     'menu.view.themeLight': 'Tema claro', 'menu.view.fullscreen': 'Pantalla completa',
+    'menu.document': 'Documento', 'menu.document.info': 'Información del archivo',
+    'menu.format': 'Formato', 'menu.format.bold': 'Negrita', 'menu.format.italic': 'Cursiva',
+    'menu.format.strike': 'Tachado', 'menu.format.heading': 'Título', 'menu.format.quote': 'Cita',
+    'menu.format.list': 'Lista', 'menu.format.code': 'Código inline', 'menu.format.codeblock': 'Bloque de código',
+    'menu.format.link': 'Enlace',
+    'menu.go': 'Ir', 'menu.go.top': 'Inicio del documento', 'menu.go.bottom': 'Final del documento',
+    'menu.tools': 'Herramientas', 'menu.tools.wordcount': 'Contar palabras',
+    'toolbar.open': 'Abrir', 'toolbar.save': 'Guardar', 'toolbar.print': 'Imprimir',
+    'toolbar.edit': 'Editar', 'toolbar.copy': 'Copiar', 'toolbar.theme': 'Tema', 'toolbar.fullscreen': 'Pantalla completa',
     'menu.help': 'Ayuda', 'menu.help.shortcuts': 'Atajos de teclado', 'menu.help.about': 'Acerca de',
     'empty.text': 'Abre un archivo Markdown desde el gestor de archivos<br>o arrástralo a esta ventana.',
     'toast.copied': 'Copiado al portapapeles', 'toast.copiedText': 'Copiado (solo texto)',
     'toast.saved': 'Guardado ✓', 'toast.errorOpen': 'Error al abrir archivo', 'toast.errorSave': 'Error al guardar',
+    'toast.wordcount': 'palabras',
     'shortcuts.title': 'Atajos de teclado', 'shortcuts.open': 'Abrir archivo', 'shortcuts.save': 'Guardar',
     'shortcuts.print': 'Imprimir', 'shortcuts.quit': 'Salir', 'shortcuts.editMode': 'Modo edición',
     'shortcuts.copyRich': 'Copiar Rich Text', 'shortcuts.zoomIn': 'Acercar', 'shortcuts.zoomOut': 'Alejar',
     'shortcuts.zoomReset': 'Restablecer zoom', 'shortcuts.fullscreen': 'Pantalla completa',
     'shortcuts.closeMenu': 'Cerrar menú / modal',
     'shortcuts.closeTab': 'Cerrar pestaña',
-    'about.subtitle': 'Visor de Markdown minimalista', 'about.version': 'Versión 1.2.0',
+    'about.subtitle': 'Visor de Markdown minimalista', 'about.version': 'Versión 1.1.0',
     'about.built': 'Construido con Wails + Go',
     'settings.title': 'Configuración', 'settings.language': 'Idioma', 'settings.colorTheme': 'Tema de color',
   },
@@ -38,17 +49,27 @@ const translations: Record<Locale, Record<string, string>> = {
     'menu.view': 'View', 'menu.view.zoomIn': 'Zoom in', 'menu.view.zoomOut': 'Zoom out',
     'menu.view.zoomReset': 'Reset zoom', 'menu.view.themeDark': 'Dark theme',
     'menu.view.themeLight': 'Light theme', 'menu.view.fullscreen': 'Fullscreen',
+    'menu.document': 'Document', 'menu.document.info': 'File information',
+    'menu.format': 'Format', 'menu.format.bold': 'Bold', 'menu.format.italic': 'Italic',
+    'menu.format.strike': 'Strikethrough', 'menu.format.heading': 'Heading', 'menu.format.quote': 'Quote',
+    'menu.format.list': 'List', 'menu.format.code': 'Inline code', 'menu.format.codeblock': 'Code block',
+    'menu.format.link': 'Link',
+    'menu.go': 'Go', 'menu.go.top': 'Start of document', 'menu.go.bottom': 'End of document',
+    'menu.tools': 'Tools', 'menu.tools.wordcount': 'Word count',
+    'toolbar.open': 'Open', 'toolbar.save': 'Save', 'toolbar.print': 'Print',
+    'toolbar.edit': 'Edit', 'toolbar.copy': 'Copy', 'toolbar.theme': 'Theme', 'toolbar.fullscreen': 'Fullscreen',
     'menu.help': 'Help', 'menu.help.shortcuts': 'Keyboard shortcuts', 'menu.help.about': 'About',
     'empty.text': 'Open a Markdown file from the file manager<br>or drag it to this window.',
     'toast.copied': 'Copied to clipboard', 'toast.copiedText': 'Copied (text only)',
     'toast.saved': 'Saved ✓', 'toast.errorOpen': 'Error opening file', 'toast.errorSave': 'Error saving',
+    'toast.wordcount': 'words',
     'shortcuts.title': 'Keyboard shortcuts', 'shortcuts.open': 'Open file', 'shortcuts.save': 'Save',
     'shortcuts.print': 'Print', 'shortcuts.quit': 'Quit', 'shortcuts.editMode': 'Edit mode',
     'shortcuts.copyRich': 'Copy Rich Text', 'shortcuts.zoomIn': 'Zoom in', 'shortcuts.zoomOut': 'Zoom out',
     'shortcuts.zoomReset': 'Reset zoom', 'shortcuts.fullscreen': 'Fullscreen',
     'shortcuts.closeMenu': 'Close menu / modal',
     'shortcuts.closeTab': 'Close tab',
-    'about.subtitle': 'Minimalist Markdown viewer', 'about.version': 'Version 1.2.0',
+    'about.subtitle': 'Minimalist Markdown viewer', 'about.version': 'Version 1.1.0',
     'about.built': 'Built with Wails + Go',
     'settings.title': 'Settings', 'settings.language': 'Language', 'settings.colorTheme': 'Color theme',
   },
@@ -224,6 +245,22 @@ let openMenu: string | null = null;
 
 marked.setOptions({ gfm: true, breaks: true });
 
+const renderer = new marked.Renderer();
+const origCodeRenderer = renderer.code;
+renderer.code = function (this: unknown, ...args: Parameters<typeof origCodeRenderer>) {
+  const token = args[0];
+  const lang = typeof token === 'object' && token !== null ? (token as { lang?: string }).lang : undefined;
+  const text = typeof token === 'object' && token !== null ? (token as { text?: string }).text ?? '' : String(token);
+  let highlighted: string;
+  if (lang && hljs.getLanguage(lang)) {
+    highlighted = hljs.highlight(text, { language: lang }).value;
+  } else {
+    highlighted = hljs.highlightAuto(text).value;
+  }
+  return `<pre><code class="hljs${lang ? ` language-${lang}` : ''}">${highlighted}</code></pre>`;
+};
+marked.use({ renderer });
+
 const appEl = document.getElementById('app')!;
 
 // Apply initial theme
@@ -321,13 +358,21 @@ function confirmCloseTab(tab: Tab) {
 // ─── Render ─────────────────────────────────────────────
 function render() {
   const tab = getActiveTab();
-  const titleText = tab ? tab.name : 'PureMark';
   const hasFile = tab !== null;
   const mode = tab?.mode || 'view';
 
   appEl.innerHTML = `
-    <div class="toolbar">
-      <div class="menu-bar">
+    <div id="title-bar">
+      <div class="titlebar-left"></div>
+      <div class="titlebar-center">PureMark</div>
+      <div class="titlebar-right">
+        <button class="wc-btn" id="btn-min" title="Minimizar">─</button>
+        <button class="wc-btn" id="btn-max" title="Maximizar">□</button>
+        <button class="wc-btn close" id="btn-close" title="Cerrar">✕</button>
+      </div>
+    </div>
+    <div id="menu-bar">
+      <div class="menu-bar-inner">
         <div class="menu-item">
           <button class="menu-trigger" data-menu="file">${t('menu.file')}</button>
           <div class="menu-dropdown" id="menu-file">
@@ -362,6 +407,41 @@ function render() {
           </div>
         </div>
         <div class="menu-item">
+          <button class="menu-trigger" data-menu="document">${t('menu.document')}</button>
+          <div class="menu-dropdown" id="menu-document">
+            <button class="menu-dropdown-item" id="mi-doc-info" ${!hasFile ? 'disabled' : ''}>${t('menu.document.info')}</button>
+          </div>
+        </div>
+        <div class="menu-item">
+          <button class="menu-trigger" data-menu="format">${t('menu.format')}</button>
+          <div class="menu-dropdown" id="menu-format">
+            <button class="menu-dropdown-item" id="mi-fmt-bold" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.bold')}<span class="shortcut">Ctrl+B</span></button>
+            <button class="menu-dropdown-item" id="mi-fmt-italic" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.italic')}<span class="shortcut">Ctrl+I</span></button>
+            <button class="menu-dropdown-item" id="mi-fmt-strike" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.strike')}</button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="mi-fmt-heading" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.heading')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-quote" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.quote')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-list" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.list')}</button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="mi-fmt-code" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.code')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-codeblock" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.codeblock')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-link" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.link')}</button>
+          </div>
+        </div>
+        <div class="menu-item">
+          <button class="menu-trigger" data-menu="go">${t('menu.go')}</button>
+          <div class="menu-dropdown" id="menu-go">
+            <button class="menu-dropdown-item" id="mi-go-top" ${!hasFile ? 'disabled' : ''}>${t('menu.go.top')}<span class="shortcut">Home</span></button>
+            <button class="menu-dropdown-item" id="mi-go-bottom" ${!hasFile ? 'disabled' : ''}>${t('menu.go.bottom')}<span class="shortcut">End</span></button>
+          </div>
+        </div>
+        <div class="menu-item">
+          <button class="menu-trigger" data-menu="tools">${t('menu.tools')}</button>
+          <div class="menu-dropdown" id="menu-tools">
+            <button class="menu-dropdown-item" id="mi-wordcount" ${!hasFile ? 'disabled' : ''}>${t('menu.tools.wordcount')}</button>
+          </div>
+        </div>
+        <div class="menu-item">
           <button class="menu-trigger" data-menu="help">${t('menu.help')}</button>
           <div class="menu-dropdown" id="menu-help">
             <button class="menu-dropdown-item" id="mi-shortcuts">${t('menu.help.shortcuts')}</button>
@@ -369,31 +449,66 @@ function render() {
           </div>
         </div>
       </div>
-      <div class="toolbar-title">${tab ? escapeHtml(prettyPath(tab.path)) : titleText}</div>
-      <div class="toolbar-right">
-        <button class="wc-btn" id="btn-min" title="Minimizar">─</button>
-        <button class="wc-btn" id="btn-max" title="Maximizar">□</button>
-        <button class="wc-btn close" id="btn-close" title="Cerrar">✕</button>
+    </div>
+    <div id="main-toolbar">
+      <button class="tb-btn" id="tb-open"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>${t('toolbar.open')}</button>
+      <button class="tb-btn" id="tb-save" ${!hasFile ? 'disabled' : ''}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>${t('toolbar.save')}</button>
+      <button class="tb-btn" id="tb-print" ${!hasFile ? 'disabled' : ''}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>${t('toolbar.print')}</button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn${mode === 'edit' ? ' active' : ''}" id="tb-edit" ${!hasFile ? 'disabled' : ''}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>${t('toolbar.edit')}</button>
+      <button class="tb-btn" id="tb-copy" ${!hasFile || mode !== 'view' ? 'disabled' : ''}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>${t('toolbar.copy')}</button>
+      <div class="tb-sep"></div>
+      <button class="tb-btn tb-zoom-btn" id="tb-zoom-out" ${!hasFile ? 'disabled' : ''}>−</button>
+      <span class="tb-zoom-label" id="tb-zoom-label">${Math.round(zoomLevel * 100)}%</span>
+      <button class="tb-btn tb-zoom-btn" id="tb-zoom-in" ${!hasFile ? 'disabled' : ''}>+</button>
+      <div class="tb-spacer"></div>
+      <button class="tb-btn" id="tb-theme"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>${t('toolbar.theme')}</button>
+      <button class="tb-btn" id="tb-fullscreen"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>${t('toolbar.fullscreen')}</button>
+    </div>
+    <div id="tab-bar">
+      ${renderTabBar()}
+    </div>
+    <div id="content-area">
+      ${tab ? renderContent(tab) : renderEmpty()}
+    </div>
+    <div id="status-bar">
+      <div class="status-left">
+        <span id="sb-path">${tab ? escapeHtml(prettyPath(tab.path)) : ''}</span>
+        <span class="sb-sep">|</span>
+        <span id="sb-lines">—</span>
+        <span class="sb-sep">|</span>
+        <span id="sb-size">—</span>
+        <span class="sb-sep">|</span>
+        <span id="sb-modified">—</span>
+      </div>
+      <div class="status-right">
+        <span id="sb-zoom">${Math.round(zoomLevel * 100)}%</span>
+        <input type="range" class="sb-slider" id="sb-zoom-slider" min="50" max="300" step="10" value="${Math.round(zoomLevel * 100)}">
+        <button class="sb-btn" id="sb-fullscreen" title="${t('toolbar.fullscreen')}">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+        </button>
       </div>
     </div>
-    ${tabs.length > 1 ? renderTabBar() : ''}
-    ${tab ? renderContent(tab) : renderEmpty()}
     <div class="zoom-indicator" id="zoom-indicator">${Math.round(zoomLevel * 100)}%</div>
     <div class="toast" id="toast"></div>
   `;
-  appEl.classList.toggle('has-tabs', tabs.length > 1);
   bindRenderEvents();
+  updateStatusBar();
 }
 
 function renderTabBar(): string {
-  return `<div class="tabbar">${tabs.map(tab => {
-    const isActive = tab.path === activeTabPath;
-    const isDirty = tab.rawContent !== tab.savedContent;
-    return `<div class="tab${isActive ? ' active' : ''}" data-tab-path="${escapeAttr(tab.path)}" title="${escapeAttr(prettyPath(tab.path))}">
-      <span class="tab-name">${isDirty ? '● ' : ''}${escapeHtml(tab.name)}</span>
-      <button class="tab-close" data-close-path="${escapeAttr(tab.path)}" title="">✕</button>
-    </div>`;
-  }).join('')}</div>`;
+  return `
+    <button class="tabbar-scroll tabbar-scroll-left" id="tab-scroll-left">‹</button>
+    <div class="tabbar" id="tabbar-inner">${tabs.map(tab => {
+      const isActive = tab.path === activeTabPath;
+      const isDirty = tab.rawContent !== tab.savedContent;
+      return `<div class="tab${isActive ? ' active' : ''}" data-tab-path="${escapeAttr(tab.path)}" title="${escapeAttr(prettyPath(tab.path))}">
+        <span class="tab-name">${isDirty ? '● ' : ''}${escapeHtml(tab.name)}</span>
+        <button class="tab-close" data-close-path="${escapeAttr(tab.path)}" title="">✕</button>
+      </div>`;
+    }).join('')}</div>
+    <button class="tabbar-scroll tabbar-scroll-right" id="tab-scroll-right">›</button>
+    <button class="tab-add" id="tab-add" title="${t('toolbar.open')}">+</button>`;
 }
 
 function renderEmpty(): string {
@@ -522,9 +637,9 @@ function bindRenderEvents() {
   document.getElementById('btn-min')?.addEventListener('click', () => WindowMinimise());
   document.getElementById('btn-max')?.addEventListener('click', () => WindowToggleMaximise());
 
-  document.querySelector('.toolbar')?.addEventListener('dblclick', (e) => {
+  document.getElementById('title-bar')?.addEventListener('dblclick', (e) => {
     const target = e.target as HTMLElement;
-    if (target.closest('.menu-item') || target.closest('.toolbar-right')) return;
+    if (target.closest('.titlebar-right')) return;
     WindowToggleMaximise();
   });
 
@@ -560,11 +675,65 @@ function bindRenderEvents() {
   document.getElementById('mi-theme')?.addEventListener('click', () => { closeMenu(); toggleTheme(); });
   document.getElementById('mi-fullscreen')?.addEventListener('click', () => { closeMenu(); toggleFullscreen(); });
 
+  // Document menu
+  document.getElementById('mi-doc-info')?.addEventListener('click', () => { closeMenu(); showDocumentInfo(); });
+
+  // Format menu
+  document.getElementById('mi-fmt-bold')?.addEventListener('click', () => { closeMenu(); insertMarkdown('bold'); });
+  document.getElementById('mi-fmt-italic')?.addEventListener('click', () => { closeMenu(); insertMarkdown('italic'); });
+  document.getElementById('mi-fmt-strike')?.addEventListener('click', () => { closeMenu(); insertMarkdown('strike'); });
+  document.getElementById('mi-fmt-heading')?.addEventListener('click', () => { closeMenu(); insertMarkdown('h2'); });
+  document.getElementById('mi-fmt-quote')?.addEventListener('click', () => { closeMenu(); insertMarkdown('quote'); });
+  document.getElementById('mi-fmt-list')?.addEventListener('click', () => { closeMenu(); insertMarkdown('list'); });
+  document.getElementById('mi-fmt-code')?.addEventListener('click', () => { closeMenu(); insertMarkdown('code'); });
+  document.getElementById('mi-fmt-codeblock')?.addEventListener('click', () => { closeMenu(); insertMarkdown('codeblock'); });
+  document.getElementById('mi-fmt-link')?.addEventListener('click', () => { closeMenu(); insertMarkdown('link'); });
+
+  // Go menu
+  document.getElementById('mi-go-top')?.addEventListener('click', () => { closeMenu(); goToPosition('top'); });
+  document.getElementById('mi-go-bottom')?.addEventListener('click', () => { closeMenu(); goToPosition('bottom'); });
+
+  // Tools menu
+  document.getElementById('mi-wordcount')?.addEventListener('click', () => { closeMenu(); showWordCount(); });
+
   document.getElementById('mi-shortcuts')?.addEventListener('click', () => { closeMenu(); showShortcuts(); });
   document.getElementById('mi-about')?.addEventListener('click', () => { closeMenu(); showAbout(); });
 
+  // Main toolbar buttons
+  document.getElementById('tb-open')?.addEventListener('click', () => openFileDialog());
+  document.getElementById('tb-save')?.addEventListener('click', () => saveActiveTab());
+  document.getElementById('tb-print')?.addEventListener('click', () => printDocument());
+  document.getElementById('tb-edit')?.addEventListener('click', () => toggleMode());
+  document.getElementById('tb-copy')?.addEventListener('click', () => copyRichText());
+  document.getElementById('tb-zoom-in')?.addEventListener('click', () => adjustZoom(0.1));
+  document.getElementById('tb-zoom-out')?.addEventListener('click', () => adjustZoom(-0.1));
+  document.getElementById('tb-theme')?.addEventListener('click', () => toggleTheme());
+  document.getElementById('tb-fullscreen')?.addEventListener('click', () => toggleFullscreen());
+
+  // Tab add button
+  document.getElementById('tab-add')?.addEventListener('click', () => openFileDialog());
+
+  // Status bar
+  const sbSlider = document.getElementById('sb-zoom-slider') as HTMLInputElement | null;
+  if (sbSlider) {
+    sbSlider.addEventListener('input', () => {
+      zoomLevel = parseInt(sbSlider.value) / 100;
+      document.documentElement.style.setProperty('--zoom', String(zoomLevel));
+      savePrefs();
+      updateZoomUI();
+      const sbZoom = document.getElementById('sb-zoom');
+      if (sbZoom) sbZoom.textContent = `${Math.round(zoomLevel * 100)}%`;
+      const activeTab = getActiveTab();
+      if (activeTab?.mode === 'edit') {
+        const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
+        if (editor) editor.style.fontSize = `calc(0.95rem * ${zoomLevel})`;
+      }
+    });
+  }
+  document.getElementById('sb-fullscreen')?.addEventListener('click', () => toggleFullscreen());
+
   // Tab bar events
-  const tabbar = document.querySelector('.tabbar') as HTMLElement | null;
+  const tabbar = document.getElementById('tabbar-inner') as HTMLElement | null;
 
   document.querySelectorAll('.tab').forEach(tabEl => {
     tabEl.addEventListener('click', (e) => {
@@ -586,8 +755,29 @@ function bindRenderEvents() {
     });
   });
 
-  // Scroll horizontal con rueda del ratón en la barra de tabs
+  // Tab scroll arrows
   if (tabbar) {
+    const scrollLeft = document.getElementById('tab-scroll-left');
+    const scrollRight = document.getElementById('tab-scroll-right');
+
+    const updateScrollArrows = () => {
+      const hasOverflow = tabbar.scrollWidth > tabbar.clientWidth;
+      const canScrollLeft = tabbar.scrollLeft > 0;
+      const canScrollRight = tabbar.scrollLeft + tabbar.clientWidth < tabbar.scrollWidth - 1;
+      scrollLeft?.classList.toggle('visible', hasOverflow);
+      scrollRight?.classList.toggle('visible', hasOverflow);
+      scrollLeft?.classList.toggle('disabled', !canScrollLeft);
+      scrollRight?.classList.toggle('disabled', !canScrollRight);
+    };
+
+    scrollLeft?.addEventListener('click', () => {
+      if (tabbar.scrollLeft > 0) tabbar.scrollBy({ left: -200, behavior: 'smooth' });
+    });
+    scrollRight?.addEventListener('click', () => {
+      if (tabbar.scrollLeft + tabbar.clientWidth < tabbar.scrollWidth - 1) tabbar.scrollBy({ left: 200, behavior: 'smooth' });
+    });
+
+    tabbar.addEventListener('scroll', updateScrollArrows);
     tabbar.addEventListener('wheel', (e) => {
       e.preventDefault();
       tabbar.scrollLeft += e.deltaY;
@@ -598,6 +788,9 @@ function bindRenderEvents() {
     if (activeEl) {
       activeEl.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' });
     }
+
+    // Evaluar visibilidad inicial tras layout
+    requestAnimationFrame(updateScrollArrows);
   }
 
   // Editor-specific events
@@ -628,6 +821,22 @@ function bindRenderEvents() {
   }
 }
 
+async function updateStatusBar() {
+  const tab = getActiveTab();
+  if (!tab) return;
+  try {
+    const stats = await GetFileStats(tab.path);
+    if (!stats) return;
+    const el = (id: string) => document.getElementById(id);
+    const sbLines = el('sb-lines');
+    const sbSize = el('sb-size');
+    const sbMod = el('sb-modified');
+    if (sbLines) sbLines.textContent = `${stats.lines} ${locale === 'es' ? 'líneas' : 'lines'}`;
+    if (sbSize) sbSize.textContent = stats.sizeKB;
+    if (sbMod) sbMod.textContent = stats.modifiedDate;
+  } catch { /* ignore */ }
+}
+
 function openMenuByName(name: string) {
   closeMenu();
   openMenu = name;
@@ -652,17 +861,28 @@ function toggleTheme() {
   render();
 }
 
-function adjustZoom(delta: number) {
-  zoomLevel = Math.max(0.5, Math.min(3.0, Math.round((zoomLevel + delta) * 10) / 10));
-  document.documentElement.style.setProperty('--zoom', String(zoomLevel));
-  savePrefs();
+function updateZoomUI() {
+  const pct = `${Math.round(zoomLevel * 100)}%`;
   const indicator = document.getElementById('zoom-indicator');
   if (indicator) {
-    indicator.textContent = `${Math.round(zoomLevel * 100)}%`;
+    indicator.textContent = pct;
     indicator.classList.add('visible');
     if (zoomTimeout) clearTimeout(zoomTimeout);
     zoomTimeout = setTimeout(() => indicator.classList.remove('visible'), 1200);
   }
+  const tbLabel = document.getElementById('tb-zoom-label');
+  if (tbLabel) tbLabel.textContent = pct;
+  const sbZoom = document.getElementById('sb-zoom');
+  if (sbZoom) sbZoom.textContent = pct;
+  const sbSlider = document.getElementById('sb-zoom-slider') as HTMLInputElement | null;
+  if (sbSlider) sbSlider.value = String(Math.round(zoomLevel * 100));
+}
+
+function adjustZoom(delta: number) {
+  zoomLevel = Math.max(0.5, Math.min(3.0, Math.round((zoomLevel + delta) * 10) / 10));
+  document.documentElement.style.setProperty('--zoom', String(zoomLevel));
+  savePrefs();
+  updateZoomUI();
   const tab = getActiveTab();
   if (tab?.mode === 'edit') {
     const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
@@ -674,13 +894,7 @@ function resetZoom() {
   zoomLevel = 1.0;
   document.documentElement.style.setProperty('--zoom', '1');
   savePrefs();
-  const indicator = document.getElementById('zoom-indicator');
-  if (indicator) {
-    indicator.textContent = '100%';
-    indicator.classList.add('visible');
-    if (zoomTimeout) clearTimeout(zoomTimeout);
-    zoomTimeout = setTimeout(() => indicator.classList.remove('visible'), 1200);
-  }
+  updateZoomUI();
 }
 
 async function openFileDialog() {
@@ -847,6 +1061,48 @@ function showAbout() {
     </div>`);
 }
 
+function showDocumentInfo() {
+  const tab = getActiveTab();
+  if (!tab) return;
+  const lines = tab.rawContent.split('\n').length;
+  const words = tab.rawContent.trim() ? tab.rawContent.trim().split(/\s+/).length : 0;
+  const chars = tab.rawContent.length;
+  const sizeBytes = new TextEncoder().encode(tab.rawContent).length;
+  const sizeStr = sizeBytes < 1024 ? `${sizeBytes} B` : `${(sizeBytes / 1024).toFixed(1)} KB`;
+  createModal(t('menu.document.info'), `
+    <table class="shortcuts-table">
+      <tr><td style="color:var(--text-muted)">${locale === 'es' ? 'Ruta' : 'Path'}</td><td style="font-family:var(--font-mono);font-size:12px;">${escapeHtml(tab.path)}</td></tr>
+      <tr><td style="color:var(--text-muted)">${locale === 'es' ? 'Líneas' : 'Lines'}</td><td>${lines}</td></tr>
+      <tr><td style="color:var(--text-muted)">${locale === 'es' ? 'Palabras' : 'Words'}</td><td>${words}</td></tr>
+      <tr><td style="color:var(--text-muted)">${locale === 'es' ? 'Caracteres' : 'Characters'}</td><td>${chars}</td></tr>
+      <tr><td style="color:var(--text-muted)">${locale === 'es' ? 'Tamaño' : 'Size'}</td><td>${sizeStr}</td></tr>
+    </table>`);
+}
+
+function goToPosition(pos: 'top' | 'bottom') {
+  const contentArea = document.getElementById('content-area');
+  if (!contentArea) return;
+  const tab = getActiveTab();
+  if (tab?.mode === 'edit') {
+    const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
+    if (editor) {
+      if (pos === 'top') { editor.setSelectionRange(0, 0); editor.scrollTop = 0; }
+      else { editor.setSelectionRange(editor.value.length, editor.value.length); editor.scrollTop = editor.scrollHeight; }
+      editor.focus();
+    }
+  } else {
+    if (pos === 'top') contentArea.scrollTop = 0;
+    else contentArea.scrollTop = contentArea.scrollHeight;
+  }
+}
+
+function showWordCount() {
+  const tab = getActiveTab();
+  if (!tab) return;
+  const words = tab.rawContent.trim() ? tab.rawContent.trim().split(/\s+/).length : 0;
+  showToast(`${words} ${t('toast.wordcount')}`);
+}
+
 function showSettings() {
   const themeKeys = Object.keys(colorThemes);
   const { overlay, close } = createModal(t('settings.title'), `
@@ -904,6 +1160,8 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.key === 'z' && tab?.mode === 'edit') { e.preventDefault(); editorUndo(); return; }
   if (e.ctrlKey && e.key === 'y' && tab?.mode === 'edit') { e.preventDefault(); editorRedo(); return; }
   if (e.ctrlKey && e.shiftKey && e.key === 'Z' && tab?.mode === 'edit') { e.preventDefault(); editorRedo(); return; }
+  if (e.ctrlKey && e.key === 'b' && tab?.mode === 'edit') { e.preventDefault(); insertMarkdown('bold'); return; }
+  if (e.ctrlKey && e.key === 'i' && tab?.mode === 'edit') { e.preventDefault(); insertMarkdown('italic'); return; }
   if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveActiveTab(); }
   if (e.ctrlKey && (e.key === '+' || e.key === '=')) { e.preventDefault(); adjustZoom(0.1); }
   if (e.ctrlKey && e.key === '-') { e.preventDefault(); adjustZoom(-0.1); }

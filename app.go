@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v2/pkg/runtime"
 )
@@ -109,4 +111,62 @@ func (a *App) OpenFilesDialog() ([]string, error) {
 
 	a.lastDir = filepath.Dir(paths[0])
 	return paths, nil
+}
+
+// FileStats contiene estadísticas básicas de un archivo.
+type FileStats struct {
+	Lines        int    `json:"lines"`
+	SizeKB       string `json:"sizeKB"`
+	ModifiedDate string `json:"modifiedDate"`
+}
+
+// GetFileStats devuelve estadísticas del archivo en la ruta indicada.
+func (a *App) GetFileStats(path string) (*FileStats, error) {
+	if path == "" {
+		return nil, nil
+	}
+
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+
+	lines := strings.Count(string(data), "\n")
+
+	size := info.Size()
+	var sizeStr string
+	switch {
+	case size < 1024:
+		sizeStr = fmt.Sprintf("%d B", size)
+	case size < 1024*1024:
+		sizeStr = fmt.Sprintf("%.1f KB", float64(size)/1024)
+	default:
+		sizeStr = fmt.Sprintf("%.1f MB", float64(size)/(1024*1024))
+	}
+
+	mod := info.ModTime()
+	now := time.Now()
+	today := time.Date(now.Year(), now.Month(), now.Day(), 0, 0, 0, 0, now.Location())
+	yesterday := today.AddDate(0, 0, -1)
+
+	var dateStr string
+	switch {
+	case mod.After(today):
+		dateStr = "hoy " + mod.Format("15:04")
+	case mod.After(yesterday):
+		dateStr = "ayer " + mod.Format("15:04")
+	default:
+		dateStr = mod.Format("2006-01-02 15:04")
+	}
+
+	return &FileStats{
+		Lines:        lines,
+		SizeKB:       sizeStr,
+		ModifiedDate: dateStr,
+	}, nil
 }
