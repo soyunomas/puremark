@@ -6,6 +6,8 @@ Designed for reading notes, studying, and presenting documents with maximum read
 
 ![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg) ![Go](https://img.shields.io/badge/Go-1.23-00ADD8.svg) ![Version](https://img.shields.io/badge/version-1.1.0-green.svg)
 
+![Screenshot](./image.png)
+
 ## Features
 
 ### Viewing & Rendering
