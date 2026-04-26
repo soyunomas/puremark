@@ -197,7 +197,9 @@ interface Tab {
   path: string;
   name: string;
   rawContent: string;
+  contentVersion: number;
   savedContent: string;
+  savedVersion: number;
   mode: 'view' | 'edit';
   undoStack: EditorSnapshot[];
   redoStack: EditorSnapshot[];
@@ -217,6 +219,20 @@ function getActiveTab(): Tab | null {
 
 function basename(path: string): string {
   return path.split(/[/\\]/).pop() || path;
+}
+
+function setTabContent(tab: Tab, content: string) {
+  tab.rawContent = content;
+  tab.contentVersion++;
+}
+
+function markTabSaved(tab: Tab) {
+  tab.savedContent = tab.rawContent;
+  tab.savedVersion = tab.contentVersion;
+}
+
+function isTabDirty(tab: Tab): boolean {
+  return tab.contentVersion !== tab.savedVersion;
 }
 
 function isSupportedFile(path: string): boolean {
@@ -248,7 +264,7 @@ function editorUndo() {
   tab.redoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
   const snap = tab.undoStack.pop()!;
   editor.value = snap.text;
-  tab.rawContent = snap.text;
+  setTabContent(tab, snap.text);
   editor.setSelectionRange(snap.selStart, snap.selEnd);
 }
 
@@ -259,7 +275,7 @@ function editorRedo() {
   tab.undoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
   const snap = tab.redoStack.pop()!;
   editor.value = snap.text;
-  tab.rawContent = snap.text;
+  setTabContent(tab, snap.text);
   editor.setSelectionRange(snap.selStart, snap.selEnd);
 }
 
@@ -287,7 +303,9 @@ function newFile() {
     path: syntheticPath,
     name,
     rawContent: '',
+    contentVersion: 0,
     savedContent: '',
+    savedVersion: 0,
     mode: 'edit',
     undoStack: [],
     redoStack: [],
@@ -380,7 +398,9 @@ async function openPaths(paths: string[]) {
         path,
         name: basename(path),
         rawContent: content,
+        contentVersion: 0,
         savedContent: content,
+        savedVersion: 0,
         mode: 'view',
         undoStack: [],
         redoStack: [],
@@ -417,7 +437,7 @@ function closeTab(path: string) {
   const tab = tabs.find(t => t.path === path);
   if (!tab) return;
 
-  if (tab.rawContent !== tab.savedContent) {
+  if (isTabDirty(tab)) {
     confirmCloseTab(tab);
     return;
   }
@@ -476,7 +496,7 @@ function confirmCloseTab(tab: Tab) {
       } else {
         await SaveFileAt(tab.path, tab.rawContent);
       }
-      tab.savedContent = tab.rawContent;
+      markTabSaved(tab);
     } catch { showToast(t('toast.errorSave')); }
     close(); removeTab(tab.path);
   });
@@ -689,7 +709,7 @@ function renderTabBar(): string {
     <button class="tabbar-scroll tabbar-scroll-left" id="tab-scroll-left">‹</button>
     <div class="tabbar" id="tabbar-inner">${tabs.map(tab => {
       const isActive = tab.path === activeTabPath;
-      const isDirty = tab.rawContent !== tab.savedContent;
+      const isDirty = isTabDirty(tab);
       return `<div class="tab${isActive ? ' active' : ''}" data-tab-path="${escapeAttr(tab.path)}" title="${escapeAttr(prettyPath(tab.path))}">
         <span class="tab-name">${isDirty ? '● ' : ''}${escapeHtml(tab.name)}</span>
         <button class="tab-close" data-close-path="${escapeAttr(tab.path)}" title="">✕</button>
@@ -705,20 +725,20 @@ function renderEmpty(): string {
 
 // Caché de HTML parseado por pestaña: evita re-parsear marked + DOMPurify
 // en cada cambio de pestaña o re-render que no cambia rawContent.
-const proseCache = new WeakMap<Tab, { src: string; html: string }>();
+const proseCache = new WeakMap<Tab, { version: number; html: string }>();
 
 function getProseHTML(tab: Tab): string {
   const cached = proseCache.get(tab);
-  if (cached && cached.src === tab.rawContent) return cached.html;
+  if (cached && cached.version === tab.contentVersion) return cached.html;
   const html = DOMPurify.sanitize(marked.parse(tab.rawContent) as string);
-  proseCache.set(tab, { src: tab.rawContent, html });
+  proseCache.set(tab, { version: tab.contentVersion, html });
   return html;
 }
 
 function renderContent(tab: Tab): string {
   document.documentElement.style.setProperty('--zoom', String(zoomLevel));
   if (tab.mode === 'view') {
-    return `<div class="container view-container"><div class="prose" id="prose-content">${getProseHTML(tab)}</div></div>`;
+    return `<div class="container view-container"><div class="prose" id="prose-content" data-tab-path="${escapeAttr(tab.path)}" data-content-version="${tab.contentVersion}">${getProseHTML(tab)}</div></div>`;
   } else {
     return `
       <div class="container edit-container">
@@ -767,7 +787,7 @@ function renderContent(tab: Tab): string {
             <button class="et-btn et-code" data-action="code" title="${t('menu.format.code')}">&lt;&gt;</button>
             <button class="et-btn et-code" data-action="codeblock" title="${t('menu.format.codeblock')}">&lt;/&gt;</button>
           </div>
-          <textarea class="editor" id="editor" spellcheck="false">${escapeHtml(tab.rawContent)}</textarea>
+          <textarea class="editor" id="editor" spellcheck="false" data-tab-path="${escapeAttr(tab.path)}">${escapeHtml(tab.rawContent)}</textarea>
         </div>
       </div>
     `;
@@ -856,7 +876,7 @@ function insertMarkdown(action: string) {
     editor.setSelectionRange(start, end);
     const insert = (start === 0 ? '' : '\n') + tableTemplate + '\n';
     document.execCommand('insertText', false, insert);
-    tab.rawContent = editor.value;
+    setTabContent(tab, editor.value);
     return;
   }
 
@@ -871,7 +891,7 @@ function insertMarkdown(action: string) {
   editor.focus();
   editor.setSelectionRange(start, end);
   document.execCommand('insertText', false, replacement);
-  tab.rawContent = editor.value;
+  setTabContent(tab, editor.value);
 
   if (selectedText) {
     editor.setSelectionRange(start, start + replacement.length);
@@ -959,9 +979,16 @@ function renderActive() {
 
     if (tab.mode === 'view' && proseEl) {
       const fresh = getProseHTML(tab);
-      if (proseEl.innerHTML !== fresh) proseEl.innerHTML = fresh;
+      if (proseEl.dataset.tabPath !== tab.path || proseEl.dataset.contentVersion !== String(tab.contentVersion)) {
+        proseEl.innerHTML = fresh;
+        proseEl.dataset.tabPath = tab.path;
+        proseEl.dataset.contentVersion = String(tab.contentVersion);
+      }
     } else if (tab.mode === 'edit' && editorEl) {
-      if (editorEl.value !== tab.rawContent) editorEl.value = tab.rawContent;
+      if (editorEl.dataset.tabPath !== tab.path || editorEl.value !== tab.rawContent) {
+        editorEl.value = tab.rawContent;
+        editorEl.dataset.tabPath = tab.path;
+      }
     } else {
       // Cambio real de modo (view ↔ edit) o primer montaje del contenido.
       contentEl.innerHTML = renderContent(tab);
@@ -1213,7 +1240,7 @@ function bindContentEvents() {
         pushUndo(tab, { text: tab.rawContent, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
         tab.lastSnapshotTime = now;
       }
-      tab.rawContent = editor.value;
+      setTabContent(tab, editor.value);
     });
 
     // Close editor dropdowns when clicking editor area
@@ -1344,7 +1371,7 @@ async function saveActiveTab() {
   try {
     markSelfSave(tab.path);
     await SaveFileAt(tab.path, tab.rawContent);
-    tab.savedContent = tab.rawContent;
+    markTabSaved(tab);
     showToast(t('toast.saved'));
     const tabEl = document.querySelector(`.tab[data-tab-path="${CSS.escape(tab.path)}"] .tab-name`);
     if (tabEl) tabEl.textContent = tab.name;
@@ -1366,7 +1393,7 @@ async function saveAsActiveTab() {
     }
     tab.path = newPath;
     tab.name = basename(newPath);
-    tab.savedContent = tab.rawContent;
+    markTabSaved(tab);
     if (activeTabPath === oldPath) activeTabPath = newPath;
     void WatchFile(newPath).catch(() => {});
     showToast(t('toast.saved'));
@@ -1484,12 +1511,12 @@ function printDocument() {
 }
 
 function hasAnyUnsavedChanges(): boolean {
-  return tabs.some(tab => tab.rawContent !== tab.savedContent);
+  return tabs.some(isTabDirty);
 }
 
 function confirmQuit() {
   if (!hasAnyUnsavedChanges()) { Quit(); return; }
-  const dirtyCount = tabs.filter(t => t.rawContent !== t.savedContent).length;
+  const dirtyCount = tabs.filter(isTabDirty).length;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -1512,7 +1539,7 @@ function confirmQuit() {
   overlay.querySelector('#cq-cancel')?.addEventListener('click', close);
   overlay.querySelector('#cq-save')?.addEventListener('click', async () => {
     for (const tab of tabs) {
-      if (tab.rawContent !== tab.savedContent) {
+      if (isTabDirty(tab)) {
         try {
           if (isUntitled(tab)) {
             const newPath = await SaveMarkdownDialog(`${t('untitled')}.md`);
@@ -1794,7 +1821,7 @@ document.addEventListener('contextmenu', (e) => {
             editor.focus();
             editor.setSelectionRange(editorSelStart, editorSelEnd);
             document.execCommand('insertText', false, '');
-            tab.rawContent = editor.value;
+            setTabContent(tab, editor.value);
           }
           break;
         case 'copy':
@@ -1812,7 +1839,7 @@ document.addEventListener('contextmenu', (e) => {
               editor.focus();
               editor.setSelectionRange(editorSelStart, editorSelEnd);
               document.execCommand('insertText', false, text);
-              tab.rawContent = editor.value;
+              setTabContent(tab, editor.value);
             } catch { /* clipboard denied */ }
           }
           break;
@@ -1853,21 +1880,21 @@ async function handleExternalChange(path: string, event: string) {
 
   if (event === 'removed') {
     showToast(t('toast.removed'));
-    if (tab.savedContent === tab.rawContent) {
+    if (!isTabDirty(tab)) {
       // Force dirty so next save uses Save-As
-      tab.savedContent = tab.rawContent + '\u0000';
+      tab.savedVersion = -1;
     }
     renderActive();
     return;
   }
 
   // Modified
-  const isDirty = tab.rawContent !== tab.savedContent;
+  const isDirty = isTabDirty(tab);
   if (!isDirty) {
     try {
       const fresh = await ReadFileAt(path);
-      tab.rawContent = fresh;
-      tab.savedContent = fresh;
+      setTabContent(tab, fresh);
+      markTabSaved(tab);
       showToast(t('toast.reloaded'));
       renderActive();
     } catch { /* file may have been removed in race */ }
@@ -1905,8 +1932,8 @@ function renderConflictBanner() {
   document.getElementById('conflict-reload')?.addEventListener('click', async () => {
     try {
       const fresh = await ReadFileAt(tab.path);
-      tab.rawContent = fresh;
-      tab.savedContent = fresh;
+      setTabContent(tab, fresh);
+      markTabSaved(tab);
     } catch {}
     pendingConflicts.delete(tab.path);
     renderActive();

@@ -21,10 +21,10 @@ type App struct {
 	lastDir      string
 	startupPaths []string
 
-	watcher       *fsnotify.Watcher
-	watchedMu     sync.Mutex
-	watchedPaths  map[string]struct{}
-	lastEvent     map[string]time.Time
+	watcher      *fsnotify.Watcher
+	watchedMu    sync.Mutex
+	watchedPaths map[string]struct{}
+	lastEvent    map[string]time.Time
 }
 
 func NewApp() *App {
@@ -226,7 +226,7 @@ func (a *App) SaveMarkdownDialog(defaultFilename string) (string, error) {
 		}
 	}
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Guardar como",
+		Title:            "Guardar como",
 		DefaultDirectory: a.lastDir,
 		DefaultFilename:  defaultFilename,
 		Filters: []runtime.FileFilter{
@@ -250,7 +250,7 @@ func (a *App) SaveHTMLDialog(defaultFilename string) (string, error) {
 		}
 	}
 	path, err := runtime.SaveFileDialog(a.ctx, runtime.SaveDialogOptions{
-		Title:           "Exportar como HTML",
+		Title:            "Exportar como HTML",
 		DefaultDirectory: a.lastDir,
 		DefaultFilename:  defaultFilename,
 		Filters: []runtime.FileFilter{
@@ -360,9 +360,16 @@ type FileStats struct {
 	ModifiedDate string `json:"modifiedDate"`
 }
 
+var statBufPool = sync.Pool{
+	New: func() any {
+		buf := make([]byte, 32*1024)
+		return &buf
+	},
+}
+
 // GetFileStats devuelve estadísticas del archivo sin saturar el GC.
-// Lee en chunks de 32KB y cuenta líneas con bytes.Count (vectorizado SIMD)
-// para evitar cargar archivos completos en el Heap.
+// Lee en chunks reutilizados de 32KB y cuenta líneas con bytes.Count para
+// evitar cargar archivos completos o crear un buffer nuevo en cada llamada.
 func (a *App) GetFileStats(path string) (*FileStats, error) {
 	if path == "" {
 		return nil, nil
@@ -392,7 +399,9 @@ func (a *App) GetFileStats(path string) (*FileStats, error) {
 	}
 	defer file.Close()
 
-	buf := make([]byte, 32*1024) // 32KB L1/L2 cache friendly
+	bufPtr := statBufPool.Get().(*[]byte)
+	defer statBufPool.Put(bufPtr)
+	buf := *bufPtr
 	lines := 0
 	nl := []byte{'\n'}
 

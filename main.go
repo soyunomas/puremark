@@ -73,10 +73,17 @@ func localFileHandler(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad path", http.StatusBadRequest)
 		return
 	}
-	info, err := os.Stat(abs)
+	f, err := os.Open(abs)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer f.Close()
+
+	info, err := f.Stat()
 	if err != nil || info.IsDir() {
 		http.NotFound(w, r)
 		return
 	}
-	http.ServeFile(w, r, abs)
+	http.ServeContent(w, r, info.Name(), info.ModTime(), f)
 }

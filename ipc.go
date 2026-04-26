@@ -92,13 +92,8 @@ func startIPCServer(onPaths func([]string)) error {
 func handleIPCConn(conn net.Conn, onPaths func([]string)) {
 	defer conn.Close()
 	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	buf := make([]byte, 64*1024)
-	n, err := conn.Read(buf)
-	if err != nil || n == 0 {
-		return
-	}
 	var paths []string
-	if err := json.Unmarshal(buf[:n], &paths); err != nil {
+	if err := json.NewDecoder(conn).Decode(&paths); err != nil {
 		return
 	}
 	if len(paths) > 0 {
