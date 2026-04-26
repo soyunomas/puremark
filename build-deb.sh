@@ -3,24 +3,61 @@ set -euo pipefail
 
 # ─── Config ───────────────────────────────────────────
 APP_NAME="puremark"
-VERSION="1.1.0"
+VERSION="1.2.0"
 ARCH="amd64"
 MAINTAINER="soyunomas <https://github.com/soyunomas/puremark>"
 DESCRIPTION="PureMark — Elegant Markdown Viewer for Linux"
-PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}"
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 
-# ─── Verificar binario ───────────────────────────────
+# ─── Arg: webkit ABI (40 = 4.0 / Mint 21 / Ubuntu 22.04 ; 41 = 4.1 / Mint 22 / Ubuntu 24.04) ──
+WEBKIT="${1:-${WEBKIT:-40}}"
+case "$WEBKIT" in
+    40)
+        WAILS_TAGS=""
+        DEP_LIB="libwebkit2gtk-4.0-37"
+        SUFFIX=""
+        ;;
+    41)
+        WAILS_TAGS="-tags webkit2_41"
+        DEP_LIB="libwebkit2gtk-4.1-0"
+        SUFFIX="_webkit41"
+        ;;
+    *)
+        echo "Uso: $0 [40|41]" >&2
+        echo "  40 → libwebkit2gtk-4.0-37 (Mint 21 / Ubuntu 22.04)"  >&2
+        echo "  41 → libwebkit2gtk-4.1-0  (Mint 22 / Ubuntu 24.04)" >&2
+        exit 1
+        ;;
+esac
+
+PKG_DIR="${APP_NAME}_${VERSION}_${ARCH}${SUFFIX}"
+
+# ─── Build binary with the requested webkit ABI ──────
+echo "🔨 Building binary against webkit2gtk-${WEBKIT/4/4.}…"
+cd "$SCRIPT_DIR"
+# Limpiamos siempre el binario para forzar recompilación con tags correctos.
+rm -f "${SCRIPT_DIR}/build/bin/${APP_NAME}"
+wails build ${WAILS_TAGS}
+
 BINARY="${SCRIPT_DIR}/build/bin/${APP_NAME}"
 if [ ! -f "$BINARY" ]; then
-    echo "⚠️  Binario no encontrado en ${BINARY}"
-    echo "   Ejecutando 'wails build'..."
-    cd "$SCRIPT_DIR"
-    wails build
+    echo "❌ Binario no generado en ${BINARY}" >&2
+    exit 1
 fi
 
+# ─── Comprobar contra qué se ha enlazado realmente ──
+LINKED=$(ldd "$BINARY" | grep -oE 'libwebkit2gtk-4\.[01]\.so\.[0-9]+' | head -1 || true)
+echo "🔗 Binario enlazado contra: ${LINKED:-(no detectado)}"
+case "$WEBKIT:$LINKED" in
+    40:libwebkit2gtk-4.0.so.37) ;;
+    41:libwebkit2gtk-4.1.so.0) ;;
+    *)
+        echo "⚠️  Aviso: el binario no está enlazado contra la ABI esperada para WEBKIT=$WEBKIT."
+        echo "   Asegúrate de tener instalado libwebkit2gtk-${WEBKIT/4/4.}-dev en el sistema de build."
+        ;;
+esac
+
 # ─── Limpiar build anterior ──────────────────────────
-cd "$SCRIPT_DIR"
 rm -rf "$PKG_DIR" "${PKG_DIR}.deb"
 
 # ─── Crear estructura de directorios ─────────────────
@@ -82,13 +119,15 @@ Version: ${VERSION}
 Section: utils
 Priority: optional
 Architecture: ${ARCH}
-Depends: libwebkit2gtk-4.0-37, libgtk-3-0
+Depends: ${DEP_LIB}, libgtk-3-0
 Installed-Size: ${INSTALLED_SIZE}
 Maintainer: ${MAINTAINER}
 Description: ${DESCRIPTION}
  PureMark is a native desktop Markdown viewer built with Wails (Go + WebKit).
  Features rich text copy, edit mode, zoom controls, multiple themes, and
  seamless Linux integration as the default .md file handler.
+ .
+ Built against webkit2gtk-${WEBKIT/4/4.} (use the matching variant for your distro).
 Homepage: https://github.com/soyunomas/puremark
 EOF
 
@@ -168,6 +207,7 @@ echo ""
 echo "══════════════════════════════════════════════════"
 echo "  ✅ Paquete creado: ${DEB_FILE}"
 echo "  📦 Tamaño: $(du -h "$DEB_FILE" | cut -f1)"
+echo "  🔗 ABI:    libwebkit2gtk-${WEBKIT/4/4.}"
 echo ""
 echo "  Instalar:    sudo dpkg -i ${DEB_FILE}"
 echo "  Desinstalar: sudo dpkg -r ${APP_NAME}"

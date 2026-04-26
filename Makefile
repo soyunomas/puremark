@@ -41,11 +41,19 @@ uninstall: ## 🗑️ Desinstala la aplicación del sistema
 dev: ## 🚀 Ejecuta la aplicación en modo desarrollo (Live Reload)
 	wails dev
 
-deb: build ## 📦 Genera un paquete .deb instalable
-	@echo "📦 Generando paquete .deb..."
-	bash build-deb.sh
+deb: deb-40 ## 📦 Genera el .deb por defecto (webkit2gtk-4.0 / Mint 21 / Ubuntu 22.04)
+
+deb-40: ## 📦 .deb contra libwebkit2gtk-4.0-37 (Mint 21 / Ubuntu 22.04)
+	@echo "📦 Generando .deb (webkit2gtk-4.0)..."
+	bash build-deb.sh 40
+
+deb-41: ## 📦 .deb contra libwebkit2gtk-4.1-0 (Mint 22 / Ubuntu 24.04)
+	@echo "📦 Generando .deb (webkit2gtk-4.1)..."
+	bash build-deb.sh 41
+
+deb-all: deb-40 deb-41 ## 📦 Genera ambos .deb (4.0 y 4.1)
 
 clean: ## 🧹 Limpia los archivos de compilación generados
 	@echo "🧹 Limpiando binarios anteriores..."
-	rm -rf build/bin/ $(APP_NAME)_*_amd64.deb
+	rm -rf build/bin/ $(APP_NAME)_*_amd64*.deb
 	@echo "✅ Limpieza completada."

@@ -4,7 +4,7 @@ A clean, native Markdown viewer and editor for Linux built with [Wails](https://
 
 Designed for reading notes, studying, and presenting documents with maximum readability.
 
-![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg) ![Go](https://img.shields.io/badge/Go-1.23-00ADD8.svg) ![Version](https://img.shields.io/badge/version-1.1.0-green.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg) ![Platform](https://img.shields.io/badge/platform-Linux-lightgrey.svg) ![Go](https://img.shields.io/badge/Go-1.23-00ADD8.svg) ![Version](https://img.shields.io/badge/version-1.2.0-green.svg)
 
 ![Screenshot](./image.png)
 
@@ -14,12 +14,15 @@ Designed for reading notes, studying, and presenting documents with maximum read
 - **Native file association** — Double-click any `.md` file to open it instantly
 - **Elegant rendering** — Markdown to HTML with clean typography (Inter + JetBrains Mono)
 - **Syntax highlighting** — Code blocks with highlight.js, colors adapt to each theme
+- **Local images** — `![alt](./image.png)`, `img.png` and `/abs/path.png` are resolved against the document folder and served by an internal same-origin handler (no `file://` issues)
 - **Rich text copy** — Copy rendered content as `text/html` + `text/plain` for pasting into Word, email, etc.
 - **Print support** — Optimized `@media print` CSS with page-break control
+- **Export as PDF** — Native PDF export using system browser (headless), forced light mode
+- **Export as HTML** — Self-contained HTML with inline styles and syntax highlighting
 
 ### Editing
 - **Edit mode** — Toggle between view and edit with `Ctrl+E`
-- **Inline formatting toolbar** — Bold, Italic, Strikethrough, Headings, Quotes, Lists, Links, Code (inline and block)
+- **Inline formatting toolbar** — Bold, Italic, Strikethrough, Headings (H1–H4), Quote, Lists (bullet, numbered, task), Links, Images, Tables, Horizontal rule, Code (inline and block)
 - **Smart formatting** — Place your cursor on a word and apply formatting; it wraps the whole word automatically
 - **Full undo / redo** — `Ctrl+Z` / `Ctrl+Y` with custom undo stack (native undo unreliable in WebKitGTK)
 - **Unsaved changes protection** — Prompts to save before closing if there are pending edits
@@ -30,6 +33,15 @@ Designed for reading notes, studying, and presenting documents with maximum read
 - **Tab bar with scroll** — Horizontal scrolling with arrows and mouse wheel when many tabs are open
 - **Quick open button** — `+` button on the tab bar to open new files
 - **Drag & Drop** — Drop `.md` files onto the window to open them as new tabs
+
+### File Management
+- **New file** — Create untitled documents with `Ctrl+N`
+- **Save as** — Save to new location with `Ctrl+Shift+S`
+- **Export as PDF** — Direct PDF generation without print dialog (uses system browser headless)
+- **Export as HTML** — Self-contained HTML files with inline CSS and syntax highlighting
+- **Fullscreen Zen Mode** — Hide all UI except tabs and content for immersive reading (configurable)
+- **Single instance** — Opening multiple files from the file manager stacks them as tabs in the existing window
+- **External change detection** — Files edited by other programs are reloaded silently when clean, or surface a non-modal *Reload / Keep my changes* banner when dirty
 
 ### UI & Customization
 - **9 color themes** — Default, Nord, Solarized, Dracula, Rosé Pine, Catppuccin, Oceanic, Sunset Coral, Emerald
@@ -51,10 +63,19 @@ Designed for reading notes, studying, and presenting documents with maximum read
 
 ### Option A: `.deb` package (recommended)
 
-Download the latest `.deb` from [Releases](https://github.com/soyunomas/puremark/releases) and install:
+Two variants are published — pick the one that matches your distro:
+
+| Package | Distro | WebKit ABI |
+|---|---|---|
+| `puremark_1.2.0_amd64.deb`         | Mint 21 / Ubuntu 22.04 / Debian 12 | `libwebkit2gtk-4.0-37` |
+| `puremark_1.2.0_amd64_webkit41.deb`| Mint 22 / Ubuntu 24.04             | `libwebkit2gtk-4.1-0`  |
+
+Download from [Releases](https://github.com/soyunomas/puremark/releases) and install:
 
 ```bash
-sudo dpkg -i puremark_1.1.0_amd64.deb
+sudo dpkg -i puremark_1.2.0_amd64.deb         # webkit 4.0
+# or
+sudo dpkg -i puremark_1.2.0_amd64_webkit41.deb # webkit 4.1
 ```
 
 This will:
@@ -75,11 +96,14 @@ sudo dpkg -r puremark
 - [Go](https://go.dev/dl/) 1.23+
 - [Node.js](https://nodejs.org/) 18+
 - [Wails CLI](https://wails.io/docs/gettingstarted/installation) v2
-- WebKit2GTK dev libraries:
+- WebKit2GTK dev libraries — pick the one your distro ships:
 
 ```bash
-# Debian / Ubuntu / Mint
+# Mint 21 / Ubuntu 22.04 / Debian 12
 sudo apt install libwebkit2gtk-4.0-dev libgtk-3-dev
+
+# Mint 22 / Ubuntu 24.04
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev
 ```
 
 Verify your environment:
@@ -106,7 +130,7 @@ Make sure `~/.local/bin` is in your `PATH`.
 make deb
 ```
 
-Generates `puremark_1.1.0_amd64.deb` in the project directory.
+Generates `puremark_1.2.0_amd64.deb` in the project directory.
 
 ## Usage
 
@@ -130,6 +154,8 @@ puremark file1.md file2.md   # Opens both in tabs
 | `Ctrl+E` | Toggle edit mode |
 | `Ctrl+W` | Close current tab |
 | `Ctrl+P` | Print |
+| `Ctrl+N` | New file |
+| `Ctrl+Shift+S` | Save as |
 | `Ctrl+Q` | Quit |
 | `Ctrl+Z` | Undo |
 | `Ctrl+Y` / `Ctrl+Shift+Z` | Redo |
