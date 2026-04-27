@@ -5,12 +5,12 @@ DESKTOP_DIR = $(HOME)/.local/share/applications
 
 WAILS_FLAGS = -trimpath -ldflags="-s -w -buildid="
 
-.PHONY: help build build-40 build-41 install install-40 install-41 uninstall dev clean deb deb-40 deb-41 deb-all
+.PHONY: help build build-40 build-41 install install-40 install-41 install-files uninstall dev dev-40 dev-41 clean deb deb-40 deb-41 deb-all
 
 help: ## ❓ Muestra este menú de ayuda
 	@echo "Comandos disponibles para $(APP_NAME):"
 	@echo ""
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
+	@grep -E '^[a-zA-Z0-9_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 
 build: build-40 ## 🔨 Compila por defecto usando webkit2gtk-4.0
@@ -31,7 +31,7 @@ install-40: build-40 ## 📦 Compila e instala usando webkit2gtk-4.0
 install-41: build-41 ## 📦 Compila e instala usando webkit2gtk-4.1
 	$(MAKE) install-files
 
-install-files:
+install-files: ## 📦 Instala los archivos ya compilados sin recompilar
 	@echo "📦 Instalando binario..."
 	mkdir -p $(BIN_DIR)
 	cp build/bin/$(APP_NAME) $(BIN_DIR)/$(APP_NAME)

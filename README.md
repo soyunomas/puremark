@@ -16,6 +16,7 @@ Designed for reading notes, studying, and presenting documents with maximum read
 - **Syntax highlighting** — Code blocks with highlight.js, colors adapt to each theme
 - **Local images** — `![alt](./image.png)`, `img.png` and `/abs/path.png` are resolved against the document folder and served by an internal same-origin handler (no `file://` issues)
 - **Rich text copy** — Copy rendered content as `text/html` + `text/plain` for pasting into Word, email, etc.
+- **Find in document** — `Ctrl+F` opens a floating search bar with next/previous navigation in both rendered view and edit mode
 - **Print support** — Optimized `@media print` CSS with page-break control
 - **Export as PDF** — Native PDF export using system browser (headless), forced light mode
 - **Export as HTML** — Self-contained HTML with inline styles and syntax highlighting
@@ -49,6 +50,7 @@ Designed for reading notes, studying, and presenting documents with maximum read
 - **Zoom controls** — `Ctrl++`, `Ctrl+-`, `Ctrl+0`, `Ctrl+Mouse Wheel`, and status bar slider
 - **Frameless window** — Clean look with custom title bar and window controls
 - **Full menu bar** — File, Edit, View, Document, Format, Go, Tools, Help
+- **Document tools** — File information dialog, word count, jump to top/bottom, keyboard shortcuts, and About dialog
 - **Context menu** — Right-click for Cut, Copy, Paste, Copy as Rich Text, Select All
 - **Status bar** — File path, line count, file size, modification date, zoom slider, fullscreen toggle
 - **Multi-language UI** — Spanish and English
@@ -63,19 +65,27 @@ Designed for reading notes, studying, and presenting documents with maximum read
 
 ### Option A: `.deb` package (recommended)
 
-Two variants are published — pick the one that matches your distro:
+PureMark 1.2.0 is published in two WebKit variants. Pick the package that matches the WebKit version shipped by your distribution:
 
 | Package | Distro | WebKit ABI |
 |---|---|---|
-| `puremark_1.2.0_amd64.deb`         | Mint 21 / Ubuntu 22.04 / Debian 12 | `libwebkit2gtk-4.0-37` |
-| `puremark_1.2.0_amd64_webkit41.deb`| Mint 22 / Ubuntu 24.04             | `libwebkit2gtk-4.1-0`  |
+| `puremark_1.2.0_amd64.deb` | Linux Mint 21, Ubuntu 22.04, Debian 12 | `libwebkit2gtk-4.0-37` |
+| `puremark_1.2.0_amd64_webkit41.deb` | Linux Mint 22, Ubuntu 24.04 | `libwebkit2gtk-4.1-0` |
+
+If you are not sure, check which runtime library is available:
+
+```bash
+apt-cache policy libwebkit2gtk-4.0-37 libwebkit2gtk-4.1-0
+```
+
+Use the 4.0 package when your system has `libwebkit2gtk-4.0-37`. Use the 4.1 package when it has `libwebkit2gtk-4.1-0`.
 
 Download from [Releases](https://github.com/soyunomas/puremark/releases) and install:
 
 ```bash
-sudo dpkg -i puremark_1.2.0_amd64.deb         # webkit 4.0
+sudo dpkg -i puremark_1.2.0_amd64.deb          # WebKitGTK 4.0
 # or
-sudo dpkg -i puremark_1.2.0_amd64_webkit41.deb # webkit 4.1
+sudo dpkg -i puremark_1.2.0_amd64_webkit41.deb # WebKitGTK 4.1
 ```
 
 This will:
@@ -117,20 +127,32 @@ wails doctor
 ```bash
 git clone https://github.com/soyunomas/puremark.git
 cd puremark
+make help
 make install
 ```
 
-This compiles the app, copies the binary to `~/.local/bin/`, and registers the `.desktop` file.
+`make install` uses the WebKitGTK 4.0 build by default. On Mint 22 / Ubuntu 24.04 use:
+
+```bash
+make install-41
+```
+
+This compiles the app, copies the binary to `~/.local/bin/`, registers the `.desktop` file, and associates Markdown files with PureMark.
 
 Make sure `~/.local/bin` is in your `PATH`.
 
 #### Build `.deb` locally
 
 ```bash
-make deb
+make deb      # WebKitGTK 4.0 package
+make deb-41   # WebKitGTK 4.1 package
+make deb-all  # Both packages
 ```
 
-Generates `puremark_1.2.0_amd64.deb` in the project directory.
+Generated packages are written to the project directory:
+
+- `puremark_1.2.0_amd64.deb`
+- `puremark_1.2.0_amd64_webkit41.deb`
 
 ## Usage
 
@@ -151,6 +173,7 @@ puremark file1.md file2.md   # Opens both in tabs
 |---|---|
 | `Ctrl+O` | Open file |
 | `Ctrl+S` | Save file |
+| `Ctrl+F` | Find in document |
 | `Ctrl+E` | Toggle edit mode |
 | `Ctrl+W` | Close current tab |
 | `Ctrl+P` | Print |
@@ -166,18 +189,35 @@ puremark file1.md file2.md   # Opens both in tabs
 | `Ctrl++` / `Ctrl+-` | Zoom in / out |
 | `Ctrl+0` | Reset zoom |
 | `Ctrl+Mouse Wheel` | Zoom |
+| `Enter` / `Shift+Enter` | Next / previous search result when search is open |
 | `F11` | Toggle fullscreen |
 | `Esc` | Close menu / modal |
 
 ## Makefile Targets
 
 ```
-make build      # Compile for production
-make install    # Build + install locally
-make uninstall  # Remove from system
-make deb        # Generate .deb package
-make dev        # Run in dev mode (live reload)
-make clean      # Remove build artifacts
+make help           # Show all available commands
+
+make build          # Build using WebKitGTK 4.0 by default
+make build-40       # Build for WebKitGTK 4.0
+make build-41       # Build for WebKitGTK 4.1
+
+make dev            # Run development mode using WebKitGTK 4.0 by default
+make dev-40         # Development mode with WebKitGTK 4.0
+make dev-41         # Development mode with WebKitGTK 4.1
+
+make install        # Build + install locally using WebKitGTK 4.0 by default
+make install-40     # Build + install locally using WebKitGTK 4.0
+make install-41     # Build + install locally using WebKitGTK 4.1
+make install-files  # Install the already-built binary without rebuilding
+make uninstall      # Remove local user install
+
+make deb            # Generate the WebKitGTK 4.0 .deb by default
+make deb-40         # Generate the WebKitGTK 4.0 .deb
+make deb-41         # Generate the WebKitGTK 4.1 .deb
+make deb-all        # Generate both .deb variants
+
+make clean          # Remove build artifacts
 ```
 
 ## Tech Stack

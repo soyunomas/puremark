@@ -385,6 +385,24 @@ const appEl = document.getElementById('app')!;
 if (theme === 'dark') document.documentElement.classList.add('dark');
 applyColorTheme(currentColorTheme, theme);
 
+function resetRootScroll() {
+  const root = document.scrollingElement || document.documentElement;
+  root.scrollTop = 0;
+  root.scrollLeft = 0;
+  document.documentElement.scrollTop = 0;
+  document.documentElement.scrollLeft = 0;
+  document.body.scrollTop = 0;
+  document.body.scrollLeft = 0;
+  if (window.scrollX !== 0 || window.scrollY !== 0) {
+    window.scrollTo(0, 0);
+  }
+}
+
+function resetRootScrollAfterLayout() {
+  resetRootScroll();
+  requestAnimationFrame(resetRootScroll);
+}
+
 // ─── Unified open flow ──────────────────────────────────
 async function openPaths(paths: string[]) {
   const unique = [...new Set(paths)].filter(isSupportedFile);
@@ -716,6 +734,7 @@ function render() {
   renderConflictBanner();
   restoreCurrentTabState();
   syncSearchAfterRender();
+  resetRootScrollAfterLayout();
 }
 
 function renderTabBar(): string {
@@ -1019,6 +1038,7 @@ function renderActive() {
   renderConflictBanner();
   restoreCurrentTabState();
   syncSearchAfterRender();
+  resetRootScrollAfterLayout();
 }
 
 // ─── Render Events (rebound on each render) ─────────────

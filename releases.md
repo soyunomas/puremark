@@ -2,6 +2,48 @@
 
 ---
 
+## v1.2.0 — File Management, Enhanced Editor & PDF Export
+
+New file management capabilities, an expanded formatting toolbar, native PDF export, and immersive fullscreen mode.
+
+### ✨ New Features
+
+- **New file** — Create untitled documents (`Ctrl+N`) with automatic "Save as" on first save
+- **Save as** — Save to a new location with `Ctrl+Shift+S` and native file dialog
+- **Export as PDF** — Direct PDF generation using system browser headless mode (Chrome/Chromium/Firefox), forced light theme, no print dialog. Falls back to `window.print()` if no browser is available
+- **Export as HTML** — Self-contained HTML files with inline CSS, theme colors, and syntax highlighting rules
+- **Find in document** — Floating search bar opened with `Ctrl+F`, available from the Edit menu, with match highlighting in rendered view and native selection in edit mode
+- **Fullscreen Zen Mode** — Hides title bar, menu bar, toolbar, and status bar in fullscreen. Configurable via Settings checkbox
+- **Enhanced formatting toolbar** — Heading dropdown (H1–H4), list dropdown (bullet, numbered, task list), plus Image, Table, and Horizontal rule buttons
+- **Expanded Format menu** — H1–H4, ordered list, task list, image, table, horizontal rule added to menu bar
+- **Single instance** — Opening multiple `.md` files from the file manager now reuses the existing window and stacks them as tabs (Unix-domain socket IPC, `/tmp/puremark-$USER.sock`)
+- **External file watcher** — When a file is changed by another editor, PureMark silently reloads clean tabs and shows a non-modal conflict banner with **Reload from disk** / **Keep my changes** for dirty tabs. Removed files trigger a toast and force "Save as" on next save (powered by `fsnotify`)
+
+### 🛠️ Improvements
+
+- **Shared export HTML builder** — `buildExportHTML()` used by both HTML and PDF export with consistent styling
+- **Syntax highlighting in exports** — `.hljs-*` CSS rules now included in exported HTML/PDF
+- **Color emoji support** — `Noto Color Emoji` in font stack for export documents
+- **PDF page layout** — `@page` rules with A4 size and 14mm margins for clean PDF output
+- **Editor toolbar dropdowns** — Compact grouped UI with hover dropdowns for headings and lists
+- **i18n** — All new features fully translated (Spanish and English)
+- **Toolbar "New" button** — Added to main toolbar for quick file creation
+- **Find dialog focus handling** — In edit mode, typing in the search field no longer loses focus while results are selected in the editor
+- **Per-tab scroll preservation** — Reading/editing scroll position is saved continuously and restored when switching tabs
+- **Startup layout stability** — Root webview scroll is locked so startup files do not render with the header off-screen or a large blank footer area
+
+### 📦 Packaging
+
+- `.deb` package (v1.2.0) updated and split into WebKitGTK variants:
+  - `puremark_1.2.0_amd64.deb` for `libwebkit2gtk-4.0-37` (Linux Mint 21 / Ubuntu 22.04 / Debian 12)
+  - `puremark_1.2.0_amd64_webkit41.deb` for `libwebkit2gtk-4.1-0` (Linux Mint 22 / Ubuntu 24.04)
+- `build-deb.sh` version bumped to 1.2.0
+- `build-deb.sh` now accepts `40` or `41`, builds with the matching Wails tags, and warns if the produced binary is linked against the wrong WebKit ABI
+- `Makefile` now exposes explicit targets: `build-40`, `build-41`, `dev-40`, `dev-41`, `install-40`, `install-41`, `deb-40`, `deb-41`, `deb-all`
+- `make help` now lists numbered targets correctly and includes `install-files` for installing an already-built binary without recompiling
+
+---
+
 ## v1.1.0 — UI Redesign & Pro Features
 
 Complete UI overhaul with a structured 6-row layout, multi-tab support, syntax highlighting, and a live status bar. This release transforms PureMark from a single-file viewer into a fully featured Markdown workstation.
