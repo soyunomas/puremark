@@ -27,6 +27,11 @@ type App struct {
 	lastEvent    map[string]time.Time
 }
 
+type FileChangeEvent struct {
+	Path  string `json:"path"`
+	Event string `json:"event"`
+}
+
 func NewApp() *App {
 	return &App{
 		watchedPaths: map[string]struct{}{},
@@ -102,9 +107,9 @@ func (a *App) watchLoop() {
 			default:
 				continue
 			}
-			runtime.EventsEmit(a.ctx, "file-changed", map[string]string{
-				"path":  path,
-				"event": kind,
+			runtime.EventsEmit(a.ctx, "file-changed", FileChangeEvent{
+				Path:  path,
+				Event: kind,
 			})
 		case _, ok := <-a.watcher.Errors:
 			if !ok {
@@ -370,14 +375,14 @@ var statBufPool = sync.Pool{
 // GetFileStats devuelve estadísticas del archivo sin saturar el GC.
 // Lee en chunks reutilizados de 32KB y cuenta líneas con bytes.Count para
 // evitar cargar archivos completos o crear un buffer nuevo en cada llamada.
-func (a *App) GetFileStats(path string) (*FileStats, error) {
+func (a *App) GetFileStats(path string) (FileStats, error) {
 	if path == "" {
-		return nil, nil
+		return FileStats{}, nil
 	}
 
 	info, err := os.Stat(path)
 	if err != nil {
-		return nil, err
+		return FileStats{}, err
 	}
 
 	// 1. Cálculo de tamaño O(1)
@@ -395,7 +400,7 @@ func (a *App) GetFileStats(path string) (*FileStats, error) {
 	// 2. Conteo de líneas Zero-Allocation
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, err
+		return FileStats{}, err
 	}
 	defer file.Close()
 
@@ -412,7 +417,7 @@ func (a *App) GetFileStats(path string) (*FileStats, error) {
 		}
 		if err != nil {
 			if err != io.EOF {
-				return nil, err
+				return FileStats{}, err
 			}
 			break
 		}
@@ -434,7 +439,7 @@ func (a *App) GetFileStats(path string) (*FileStats, error) {
 		dateStr = mod.Format("2006-01-02 15:04")
 	}
 
-	return &FileStats{
+	return FileStats{
 		Lines:        lines + 1, // +1: la última línea puede no terminar en \n
 		SizeKB:       sizeStr,
 		ModifiedDate: dateStr,

@@ -15,7 +15,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'menu.file.exportHTML': 'Exportar como HTML...',
     'menu.file.print': 'Imprimir', 'menu.file.settings': 'Configuración', 'menu.file.quit': 'Salir',
     'untitled': 'Sin título',
-    'menu.edit': 'Editar', 'menu.edit.mode': 'Modo edición',
+    'menu.edit': 'Editar', 'menu.edit.mode': 'Modo edición', 'menu.edit.find': 'Buscar',
     'menu.edit.copyRich': 'Copiar como Rich Text', 'menu.edit.selectAll': 'Seleccionar todo',
     'menu.view': 'Ver', 'menu.view.zoomIn': 'Acercar', 'menu.view.zoomOut': 'Alejar',
     'menu.view.zoomReset': 'Restablecer zoom', 'menu.view.themeDark': 'Tema oscuro',
@@ -44,6 +44,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'banner.keepMyChanges': 'Conservar mis cambios',
     'toolbar.new': 'Nuevo',
     'shortcuts.title': 'Atajos de teclado', 'shortcuts.open': 'Abrir archivo', 'shortcuts.save': 'Guardar',
+    'shortcuts.find': 'Buscar',
     'shortcuts.print': 'Imprimir', 'shortcuts.quit': 'Salir', 'shortcuts.editMode': 'Modo edición',
     'shortcuts.copyRich': 'Copiar Rich Text', 'shortcuts.zoomIn': 'Acercar', 'shortcuts.zoomOut': 'Alejar',
     'shortcuts.zoomReset': 'Restablecer zoom', 'shortcuts.fullscreen': 'Pantalla completa',
@@ -53,6 +54,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.built': 'Construido con Wails + Go',
     'settings.title': 'Configuración', 'settings.language': 'Idioma', 'settings.colorTheme': 'Tema de color',
     'settings.fullscreenShowUI': 'Mostrar barras en pantalla completa',
+    'search.placeholder': 'Buscar...', 'search.noResults': 'Sin resultados',
   },
   en: {
     'menu.file': 'File', 'menu.file.new': 'New', 'menu.file.open': 'Open', 'menu.file.save': 'Save',
@@ -60,7 +62,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'menu.file.exportHTML': 'Export as HTML...',
     'menu.file.print': 'Print', 'menu.file.settings': 'Settings', 'menu.file.quit': 'Quit',
     'untitled': 'Untitled',
-    'menu.edit': 'Edit', 'menu.edit.mode': 'Edit mode',
+    'menu.edit': 'Edit', 'menu.edit.mode': 'Edit mode', 'menu.edit.find': 'Find',
     'menu.edit.copyRich': 'Copy as Rich Text', 'menu.edit.selectAll': 'Select all',
     'menu.view': 'View', 'menu.view.zoomIn': 'Zoom in', 'menu.view.zoomOut': 'Zoom out',
     'menu.view.zoomReset': 'Reset zoom', 'menu.view.themeDark': 'Dark theme',
@@ -89,6 +91,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'banner.keepMyChanges': 'Keep my changes',
     'toolbar.new': 'New',
     'shortcuts.title': 'Keyboard shortcuts', 'shortcuts.open': 'Open file', 'shortcuts.save': 'Save',
+    'shortcuts.find': 'Find',
     'shortcuts.print': 'Print', 'shortcuts.quit': 'Quit', 'shortcuts.editMode': 'Edit mode',
     'shortcuts.copyRich': 'Copy Rich Text', 'shortcuts.zoomIn': 'Zoom in', 'shortcuts.zoomOut': 'Zoom out',
     'shortcuts.zoomReset': 'Reset zoom', 'shortcuts.fullscreen': 'Fullscreen',
@@ -98,6 +101,7 @@ const translations: Record<Locale, Record<string, string>> = {
     'about.built': 'Built with Wails + Go',
     'settings.title': 'Settings', 'settings.language': 'Language', 'settings.colorTheme': 'Color theme',
     'settings.fullscreenShowUI': 'Show toolbars in fullscreen',
+    'search.placeholder': 'Find...', 'search.noResults': 'No results',
   },
 };
 
@@ -526,8 +530,8 @@ function restoreCurrentTabState() {
   const tab = getActiveTab();
   if (!tab) return;
 
-  // requestAnimationFrame: garantizar que el DOM ya está pintado.
-  requestAnimationFrame(() => {
+  const restore = () => {
+    if (activeTabPath !== tab.path) return;
     if (tab.mode === 'edit') {
       const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
       if (editor) {
@@ -541,6 +545,13 @@ function restoreCurrentTabState() {
         contentArea.scrollTop = tab.scrollPos;
       }
     }
+  };
+
+  // Dos frames: el primero espera al DOM, el segundo evita que WebKitGTK
+  // aplique scroll antes de tener medidas finales tras intercambiar contenido.
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
   });
 }
 
@@ -585,6 +596,8 @@ function render() {
           <button class="menu-trigger" data-menu="edit">${t('menu.edit')}</button>
           <div class="menu-dropdown" id="menu-edit">
             <button class="menu-dropdown-item" id="mi-toggle-edit" ${!hasFile ? 'disabled' : ''}>${mode === 'edit' ? '✓ ' : ''}${t('menu.edit.mode')}<span class="shortcut">Ctrl+E</span></button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="mi-find" ${!hasFile ? 'disabled' : ''}>${t('menu.edit.find')}<span class="shortcut">Ctrl+F</span></button>
             <div class="menu-separator"></div>
             <button class="menu-dropdown-item" id="mi-copy" ${!hasFile || mode !== 'view' ? 'disabled' : ''}>${t('menu.edit.copyRich')}<span class="shortcut">Ctrl+Shift+C</span></button>
             <button class="menu-dropdown-item" id="mi-select-all" ${!hasFile ? 'disabled' : ''}>${t('menu.edit.selectAll')}<span class="shortcut">Ctrl+A</span></button>
@@ -702,6 +715,7 @@ function render() {
   updateStatusBar();
   renderConflictBanner();
   restoreCurrentTabState();
+  syncSearchAfterRender();
 }
 
 function renderTabBar(): string {
@@ -927,6 +941,7 @@ function updateChromeStates() {
 
   // Edit menu (with checkmark refresh on toggle-edit)
   setDis('mi-toggle-edit', !hasFile);
+  setDis('mi-find', !hasFile);
   setDis('mi-copy', !hasFile || mode !== 'view');
   setDis('mi-select-all', !hasFile);
   const miToggleEdit = document.getElementById('mi-toggle-edit');
@@ -1003,6 +1018,7 @@ function renderActive() {
   updateStatusBar();
   renderConflictBanner();
   restoreCurrentTabState();
+  syncSearchAfterRender();
 }
 
 // ─── Render Events (rebound on each render) ─────────────
@@ -1044,6 +1060,7 @@ function bindRenderEvents() {
   document.getElementById('mi-quit')?.addEventListener('click', () => { closeMenu(); confirmQuit(); });
 
   document.getElementById('mi-toggle-edit')?.addEventListener('click', () => { closeMenu(); toggleMode(); });
+  document.getElementById('mi-find')?.addEventListener('click', () => { closeMenu(); openSearch(); });
   document.getElementById('mi-copy')?.addEventListener('click', () => { closeMenu(); copyRichText(); });
   document.getElementById('mi-select-all')?.addEventListener('click', () => { closeMenu(); selectAll(); });
 
@@ -1191,6 +1208,14 @@ function bindTabBarEvents() {
 // Content (editor + editor-toolbar) event binding.
 function bindContentEvents() {
   const tab = getActiveTab();
+  const contentArea = document.getElementById('content-area');
+  if (contentArea) {
+    contentArea.onscroll = () => {
+      const active = getActiveTab();
+      if (active && active.mode !== 'edit') active.scrollPos = contentArea.scrollTop;
+    };
+  }
+
   if (!tab || tab.mode !== 'edit') return;
 
   // Direct action buttons (not dropdown triggers)
@@ -1230,6 +1255,11 @@ function bindContentEvents() {
 
   const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
   if (editor) {
+    editor.onscroll = () => {
+      const active = getActiveTab();
+      if (active?.mode === 'edit') active.scrollPos = editor.scrollTop;
+    };
+
     if (tab.undoStack.length === 0) {
       pushUndo(tab, { text: editor.value, selStart: 0, selEnd: 0 });
     }
@@ -1587,6 +1617,7 @@ function showShortcuts() {
     <table class="shortcuts-table">
       <tr><td><kbd>Ctrl+O</kbd></td><td>${t('shortcuts.open')}</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>${t('shortcuts.save')}</td></tr>
+      <tr><td><kbd>Ctrl+F</kbd></td><td>${t('shortcuts.find')}</td></tr>
       <tr><td><kbd>Ctrl+P</kbd></td><td>${t('shortcuts.print')}</td></tr>
       <tr><td><kbd>Ctrl+Q</kbd></td><td>${t('shortcuts.quit')}</td></tr>
       <tr><td><kbd>Ctrl+W</kbd></td><td>${t('shortcuts.closeTab')}</td></tr>
@@ -1715,8 +1746,239 @@ function showSettings() {
   });
 }
 
+// ─── Search Controller (DOM-preserving) ────────────────
+type SearchResult = HTMLElement | [number, number];
+
+const SEARCH_RESULT_LIMIT = 2000;
+const searchState = {
+  isActive: false,
+  query: '',
+  results: [] as SearchResult[],
+  currentIndex: -1,
+};
+
+function renderSearchBar() {
+  let bar = document.getElementById('search-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'search-bar';
+    bar.className = 'search-bar';
+    bar.innerHTML = `
+      <input type="text" id="search-input" class="search-input" placeholder="${t('search.placeholder')}" spellcheck="false">
+      <span id="search-count" class="search-count">0 / 0</span>
+      <div class="search-divider"></div>
+      <button class="search-btn" id="search-prev" title="Anterior (Shift+Enter)">↑</button>
+      <button class="search-btn" id="search-next" title="Siguiente (Enter)">↓</button>
+      <button class="search-btn" id="search-close" title="Cerrar (Esc)">✕</button>
+    `;
+    const app = document.getElementById('app');
+    const statusBar = document.getElementById('status-bar');
+    if (app && statusBar) app.insertBefore(bar, statusBar);
+    else app?.appendChild(bar);
+
+    const input = document.getElementById('search-input') as HTMLInputElement;
+    input.addEventListener('input', () => {
+      searchState.query = input.value;
+      executeSearch();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        navigateSearch(e.shiftKey ? -1 : 1, false, true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeSearch();
+      }
+    });
+    document.getElementById('search-prev')?.addEventListener('click', () => navigateSearch(-1));
+    document.getElementById('search-next')?.addEventListener('click', () => navigateSearch(1));
+    document.getElementById('search-close')?.addEventListener('click', () => closeSearch());
+  }
+}
+
+function openSearch() {
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  renderSearchBar();
+  const bar = document.getElementById('search-bar');
+  const input = document.getElementById('search-input') as HTMLInputElement | null;
+  if (!bar || !input) return;
+
+  let selection = '';
+  if (tab.mode === 'edit') {
+    const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
+    if (editor && editor.selectionStart !== editor.selectionEnd) {
+      selection = editor.value.substring(editor.selectionStart, editor.selectionEnd);
+    }
+  } else {
+    selection = window.getSelection()?.toString() || '';
+  }
+
+  searchState.isActive = true;
+  bar.classList.add('visible');
+
+  if (selection && selection.length < 100 && !selection.includes('\n')) {
+    input.value = selection;
+    searchState.query = selection;
+  }
+
+  input.select();
+  input.focus();
+  executeSearch();
+}
+
+function closeSearch() {
+  searchState.isActive = false;
+  document.getElementById('search-bar')?.classList.remove('visible');
+  clearHighlights();
+
+  const tab = getActiveTab();
+  if (tab?.mode === 'edit') {
+    document.getElementById('editor')?.focus();
+  }
+}
+
+function clearHighlights() {
+  searchState.results = [];
+  searchState.currentIndex = -1;
+  updateSearchUI();
+
+  const prose = document.getElementById('prose-content');
+  if (!prose) return;
+
+  prose.querySelectorAll('mark').forEach(mark => {
+    const parent = mark.parentNode;
+    if (!parent) return;
+    parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
+    parent.normalize();
+  });
+}
+
+function executeSearch() {
+  clearHighlights();
+  if (!searchState.query.trim()) return;
+
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  if (tab.mode === 'view') {
+    const prose = document.getElementById('prose-content');
+    if (!prose) return;
+
+    const walker = document.createTreeWalker(prose, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      textNodes.push(node as Text);
+    }
+
+    const query = searchState.query.toLowerCase();
+    const marks: HTMLElement[] = [];
+    let matchCount = 0;
+
+    textNodes.forEach(textNode => {
+      if (matchCount >= SEARCH_RESULT_LIMIT) return;
+      let currentNode = textNode;
+      let text = currentNode.nodeValue || '';
+      let lowerText = text.toLowerCase();
+      let index = lowerText.indexOf(query);
+
+      while (index !== -1 && matchCount < SEARCH_RESULT_LIMIT) {
+        const matchNode = currentNode.splitText(index);
+        currentNode = matchNode.splitText(query.length) as Text;
+
+        const mark = document.createElement('mark');
+        mark.textContent = matchNode.nodeValue;
+        matchNode.parentNode?.replaceChild(mark, matchNode);
+        marks.push(mark);
+        matchCount++;
+
+        text = currentNode.nodeValue || '';
+        lowerText = text.toLowerCase();
+        index = lowerText.indexOf(query);
+      }
+    });
+
+    searchState.results = marks;
+  } else {
+    const regex = new RegExp(escapeRegExp(searchState.query), 'gi');
+    const matches: [number, number][] = [];
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(tab.rawContent)) !== null && matches.length < SEARCH_RESULT_LIMIT) {
+      matches.push([match.index, match.index + match[0].length]);
+    }
+    searchState.results = matches;
+  }
+
+  if (searchState.results.length > 0) navigateSearch(1, true, true);
+  else updateSearchUI();
+}
+
+function navigateSearch(direction: number, isFirstRun = false, keepSearchFocus = false) {
+  const total = searchState.results.length;
+  if (total === 0) return;
+
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  if (tab.mode === 'view' && searchState.currentIndex >= 0 && searchState.currentIndex < total) {
+    (searchState.results[searchState.currentIndex] as HTMLElement).classList.remove('active');
+  }
+
+  searchState.currentIndex = isFirstRun ? 0 : (searchState.currentIndex + direction + total) % total;
+  updateSearchUI();
+
+  if (tab.mode === 'view') {
+    const mark = searchState.results[searchState.currentIndex] as HTMLElement;
+    mark.classList.add('active');
+    mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else {
+    const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
+    if (!editor) return;
+    const [start, end] = searchState.results[searchState.currentIndex] as [number, number];
+    editor.setSelectionRange(start, end);
+    if (!keepSearchFocus) editor.focus();
+
+    const textBefore = tab.rawContent.substring(0, start);
+    const lineBreaks = textBefore.split('\n').length;
+    const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 24;
+    editor.scroll({ top: (lineBreaks * lineHeight) - (editor.clientHeight / 2), behavior: 'smooth' });
+
+    if (keepSearchFocus) {
+      const input = document.getElementById('search-input') as HTMLInputElement | null;
+      input?.focus();
+    }
+  }
+}
+
+function updateSearchUI() {
+  const countEl = document.getElementById('search-count');
+  if (!countEl) return;
+  const total = searchState.results.length;
+  if (total === 0) {
+    countEl.textContent = searchState.query ? t('search.noResults') : '0 / 0';
+  } else {
+    countEl.textContent = `${searchState.currentIndex + 1} / ${total === SEARCH_RESULT_LIMIT ? `${SEARCH_RESULT_LIMIT}+` : total}`;
+  }
+}
+
+function syncSearchAfterRender() {
+  if (!searchState.isActive) return;
+  renderSearchBar();
+  document.getElementById('search-bar')?.classList.add('visible');
+  const input = document.getElementById('search-input') as HTMLInputElement | null;
+  if (input && input.value !== searchState.query) input.value = searchState.query;
+  executeSearch();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // ─── Global Events (bound once) ─────────────────────────
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && searchState.isActive) { closeSearch(); return; }
   if (e.key === 'Escape' && isFullscreen) { toggleFullscreen(); return; }
   if (e.key === 'Escape' && openMenu !== null) { closeMenu(); return; }
 
@@ -1733,6 +1995,7 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && (e.key === '+' || e.key === '=')) { e.preventDefault(); adjustZoom(0.1); }
   if (e.ctrlKey && e.key === '-') { e.preventDefault(); adjustZoom(-0.1); }
   if (e.ctrlKey && e.key === 'e') { e.preventDefault(); toggleMode(); }
+  if (e.ctrlKey && e.key === 'f') { e.preventDefault(); openSearch(); return; }
   if (e.ctrlKey && e.key === '0') { e.preventDefault(); resetZoom(); }
   if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openFileDialog(); }
   if (e.ctrlKey && e.key === 'p') { e.preventDefault(); printDocument(); }

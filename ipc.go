@@ -57,9 +57,8 @@ func trySendToPrimary() bool {
 	}
 	defer conn.Close()
 
-	payload, _ := json.Marshal(filteredArgs())
 	_ = conn.SetWriteDeadline(time.Now().Add(500 * time.Millisecond))
-	if _, err := conn.Write(append(payload, '\n')); err != nil {
+	if err := json.NewEncoder(conn).Encode(filteredArgs()); err != nil {
 		return false
 	}
 	return true
