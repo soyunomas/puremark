@@ -201,9 +201,7 @@ interface Tab {
   path: string;
   name: string;
   rawContent: string;
-  contentVersion: number;
   savedContent: string;
-  savedVersion: number;
   mode: 'view' | 'edit';
   undoStack: EditorSnapshot[];
   redoStack: EditorSnapshot[];
@@ -216,6 +214,11 @@ interface Tab {
 
 let tabs: Tab[] = [];
 let activeTabPath: string | null = null;
+// Flag para silenciar los listeners de scroll durante una restauración
+// programática. Sin esto, el primer `editor.scrollTop = tab.scrollPos` sobre
+// un textarea recién creado se clampa (scrollHeight aún no listo en
+// WebKitGTK), dispara onscroll, y sobrescribe tab.scrollPos con 0.
+let isRestoringScroll = false;
 
 function getActiveTab(): Tab | null {
   return tabs.find(t => t.path === activeTabPath) ?? null;
@@ -223,20 +226,6 @@ function getActiveTab(): Tab | null {
 
 function basename(path: string): string {
   return path.split(/[/\\]/).pop() || path;
-}
-
-function setTabContent(tab: Tab, content: string) {
-  tab.rawContent = content;
-  tab.contentVersion++;
-}
-
-function markTabSaved(tab: Tab) {
-  tab.savedContent = tab.rawContent;
-  tab.savedVersion = tab.contentVersion;
-}
-
-function isTabDirty(tab: Tab): boolean {
-  return tab.contentVersion !== tab.savedVersion;
 }
 
 function isSupportedFile(path: string): boolean {
@@ -268,7 +257,7 @@ function editorUndo() {
   tab.redoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
   const snap = tab.undoStack.pop()!;
   editor.value = snap.text;
-  setTabContent(tab, snap.text);
+  tab.rawContent = snap.text;
   editor.setSelectionRange(snap.selStart, snap.selEnd);
 }
 
@@ -279,7 +268,7 @@ function editorRedo() {
   tab.undoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
   const snap = tab.redoStack.pop()!;
   editor.value = snap.text;
-  setTabContent(tab, snap.text);
+  tab.rawContent = snap.text;
   editor.setSelectionRange(snap.selStart, snap.selEnd);
 }
 
@@ -307,9 +296,7 @@ function newFile() {
     path: syntheticPath,
     name,
     rawContent: '',
-    contentVersion: 0,
     savedContent: '',
-    savedVersion: 0,
     mode: 'edit',
     undoStack: [],
     redoStack: [],
@@ -420,9 +407,7 @@ async function openPaths(paths: string[]) {
         path,
         name: basename(path),
         rawContent: content,
-        contentVersion: 0,
         savedContent: content,
-        savedVersion: 0,
         mode: 'view',
         undoStack: [],
         redoStack: [],
@@ -459,7 +444,7 @@ function closeTab(path: string) {
   const tab = tabs.find(t => t.path === path);
   if (!tab) return;
 
-  if (isTabDirty(tab)) {
+  if (tab.rawContent !== tab.savedContent) {
     confirmCloseTab(tab);
     return;
   }
@@ -518,7 +503,7 @@ function confirmCloseTab(tab: Tab) {
       } else {
         await SaveFileAt(tab.path, tab.rawContent);
       }
-      markTabSaved(tab);
+      tab.savedContent = tab.rawContent;
     } catch { showToast(t('toast.errorSave')); }
     close(); removeTab(tab.path);
   });
@@ -548,28 +533,39 @@ function restoreCurrentTabState() {
   const tab = getActiveTab();
   if (!tab) return;
 
+  const targetScroll = tab.scrollPos;
   const restore = () => {
     if (activeTabPath !== tab.path) return;
     if (tab.mode === 'edit') {
       const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
       if (editor) {
         editor.setSelectionRange(tab.selStart, tab.selEnd);
-        editor.scrollTop = tab.scrollPos;
+        editor.scrollTop = targetScroll;
         editor.focus();
       }
     } else {
       const contentArea = document.getElementById('content-area');
       if (contentArea) {
-        contentArea.scrollTop = tab.scrollPos;
+        contentArea.scrollTop = targetScroll;
       }
     }
   };
 
-  // Dos frames: el primero espera al DOM, el segundo evita que WebKitGTK
-  // aplique scroll antes de tener medidas finales tras intercambiar contenido.
+  // Silenciamos los listeners de scroll durante la restauración: si no, el
+  // scrollTop programático se clampa cuando scrollHeight aún no está listo,
+  // el evento onscroll resultante sobrescribe tab.scrollPos con 0 y el
+  // segundo RAF restaura ya un valor inservible.
+  isRestoringScroll = true;
   requestAnimationFrame(() => {
     restore();
-    requestAnimationFrame(restore);
+    requestAnimationFrame(() => {
+      restore();
+      // Un frame extra para que se procesen los onscroll asíncronos antes
+      // de devolver el control al guardado continuo.
+      requestAnimationFrame(() => {
+        isRestoringScroll = false;
+      });
+    });
   });
 }
 
@@ -742,7 +738,7 @@ function renderTabBar(): string {
     <button class="tabbar-scroll tabbar-scroll-left" id="tab-scroll-left">‹</button>
     <div class="tabbar" id="tabbar-inner">${tabs.map(tab => {
       const isActive = tab.path === activeTabPath;
-      const isDirty = isTabDirty(tab);
+      const isDirty = tab.rawContent !== tab.savedContent;
       return `<div class="tab${isActive ? ' active' : ''}" data-tab-path="${escapeAttr(tab.path)}" title="${escapeAttr(prettyPath(tab.path))}">
         <span class="tab-name">${isDirty ? '● ' : ''}${escapeHtml(tab.name)}</span>
         <button class="tab-close" data-close-path="${escapeAttr(tab.path)}" title="">✕</button>
@@ -758,20 +754,20 @@ function renderEmpty(): string {
 
 // Caché de HTML parseado por pestaña: evita re-parsear marked + DOMPurify
 // en cada cambio de pestaña o re-render que no cambia rawContent.
-const proseCache = new WeakMap<Tab, { version: number; html: string }>();
+const proseCache = new WeakMap<Tab, { src: string; html: string }>();
 
 function getProseHTML(tab: Tab): string {
   const cached = proseCache.get(tab);
-  if (cached && cached.version === tab.contentVersion) return cached.html;
+  if (cached && cached.src === tab.rawContent) return cached.html;
   const html = DOMPurify.sanitize(marked.parse(tab.rawContent) as string);
-  proseCache.set(tab, { version: tab.contentVersion, html });
+  proseCache.set(tab, { src: tab.rawContent, html });
   return html;
 }
 
 function renderContent(tab: Tab): string {
   document.documentElement.style.setProperty('--zoom', String(zoomLevel));
   if (tab.mode === 'view') {
-    return `<div class="container view-container"><div class="prose" id="prose-content" data-tab-path="${escapeAttr(tab.path)}" data-content-version="${tab.contentVersion}">${getProseHTML(tab)}</div></div>`;
+    return `<div class="container view-container"><div class="prose" id="prose-content" data-tab-path="${escapeAttr(tab.path)}">${getProseHTML(tab)}</div></div>`;
   } else {
     return `
       <div class="container edit-container">
@@ -909,7 +905,7 @@ function insertMarkdown(action: string) {
     editor.setSelectionRange(start, end);
     const insert = (start === 0 ? '' : '\n') + tableTemplate + '\n';
     document.execCommand('insertText', false, insert);
-    setTabContent(tab, editor.value);
+    tab.rawContent = editor.value;
     return;
   }
 
@@ -924,7 +920,7 @@ function insertMarkdown(action: string) {
   editor.focus();
   editor.setSelectionRange(start, end);
   document.execCommand('insertText', false, replacement);
-  setTabContent(tab, editor.value);
+  tab.rawContent = editor.value;
 
   if (selectedText) {
     editor.setSelectionRange(start, start + replacement.length);
@@ -1013,10 +1009,9 @@ function renderActive() {
 
     if (tab.mode === 'view' && proseEl) {
       const fresh = getProseHTML(tab);
-      if (proseEl.dataset.tabPath !== tab.path || proseEl.dataset.contentVersion !== String(tab.contentVersion)) {
+      if (proseEl.dataset.tabPath !== tab.path || proseEl.innerHTML !== fresh) {
         proseEl.innerHTML = fresh;
         proseEl.dataset.tabPath = tab.path;
-        proseEl.dataset.contentVersion = String(tab.contentVersion);
       }
     } else if (tab.mode === 'edit' && editorEl) {
       if (editorEl.dataset.tabPath !== tab.path || editorEl.value !== tab.rawContent) {
@@ -1231,6 +1226,7 @@ function bindContentEvents() {
   const contentArea = document.getElementById('content-area');
   if (contentArea) {
     contentArea.onscroll = () => {
+      if (isRestoringScroll) return;
       const active = getActiveTab();
       if (active && active.mode !== 'edit') active.scrollPos = contentArea.scrollTop;
     };
@@ -1276,6 +1272,7 @@ function bindContentEvents() {
   const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
   if (editor) {
     editor.onscroll = () => {
+      if (isRestoringScroll) return;
       const active = getActiveTab();
       if (active?.mode === 'edit') active.scrollPos = editor.scrollTop;
     };
@@ -1290,7 +1287,7 @@ function bindContentEvents() {
         pushUndo(tab, { text: tab.rawContent, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
         tab.lastSnapshotTime = now;
       }
-      setTabContent(tab, editor.value);
+      tab.rawContent = editor.value;
     });
 
     // Close editor dropdowns when clicking editor area
@@ -1421,7 +1418,7 @@ async function saveActiveTab() {
   try {
     markSelfSave(tab.path);
     await SaveFileAt(tab.path, tab.rawContent);
-    markTabSaved(tab);
+    tab.savedContent = tab.rawContent;
     showToast(t('toast.saved'));
     const tabEl = document.querySelector(`.tab[data-tab-path="${CSS.escape(tab.path)}"] .tab-name`);
     if (tabEl) tabEl.textContent = tab.name;
@@ -1443,7 +1440,7 @@ async function saveAsActiveTab() {
     }
     tab.path = newPath;
     tab.name = basename(newPath);
-    markTabSaved(tab);
+    tab.savedContent = tab.rawContent;
     if (activeTabPath === oldPath) activeTabPath = newPath;
     void WatchFile(newPath).catch(() => {});
     showToast(t('toast.saved'));
@@ -1561,12 +1558,12 @@ function printDocument() {
 }
 
 function hasAnyUnsavedChanges(): boolean {
-  return tabs.some(isTabDirty);
+  return tabs.some(tab => tab.rawContent !== tab.savedContent);
 }
 
 function confirmQuit() {
   if (!hasAnyUnsavedChanges()) { Quit(); return; }
-  const dirtyCount = tabs.filter(isTabDirty).length;
+  const dirtyCount = tabs.filter(t => t.rawContent !== t.savedContent).length;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -1589,7 +1586,7 @@ function confirmQuit() {
   overlay.querySelector('#cq-cancel')?.addEventListener('click', close);
   overlay.querySelector('#cq-save')?.addEventListener('click', async () => {
     for (const tab of tabs) {
-      if (isTabDirty(tab)) {
+      if (tab.rawContent !== tab.savedContent) {
         try {
           if (isUntitled(tab)) {
             const newPath = await SaveMarkdownDialog(`${t('untitled')}.md`);
@@ -2104,7 +2101,7 @@ document.addEventListener('contextmenu', (e) => {
             editor.focus();
             editor.setSelectionRange(editorSelStart, editorSelEnd);
             document.execCommand('insertText', false, '');
-            setTabContent(tab, editor.value);
+            tab.rawContent = editor.value;
           }
           break;
         case 'copy':
@@ -2122,7 +2119,7 @@ document.addEventListener('contextmenu', (e) => {
               editor.focus();
               editor.setSelectionRange(editorSelStart, editorSelEnd);
               document.execCommand('insertText', false, text);
-              setTabContent(tab, editor.value);
+              tab.rawContent = editor.value;
             } catch { /* clipboard denied */ }
           }
           break;
@@ -2163,21 +2160,21 @@ async function handleExternalChange(path: string, event: string) {
 
   if (event === 'removed') {
     showToast(t('toast.removed'));
-    if (!isTabDirty(tab)) {
+    if (tab.savedContent === tab.rawContent) {
       // Force dirty so next save uses Save-As
-      tab.savedVersion = -1;
+      tab.savedContent = tab.rawContent + '\u0000';
     }
     renderActive();
     return;
   }
 
   // Modified
-  const isDirty = isTabDirty(tab);
+  const isDirty = tab.rawContent !== tab.savedContent;
   if (!isDirty) {
     try {
       const fresh = await ReadFileAt(path);
-      setTabContent(tab, fresh);
-      markTabSaved(tab);
+      tab.rawContent = fresh;
+      tab.savedContent = fresh;
       showToast(t('toast.reloaded'));
       renderActive();
     } catch { /* file may have been removed in race */ }
@@ -2215,8 +2212,8 @@ function renderConflictBanner() {
   document.getElementById('conflict-reload')?.addEventListener('click', async () => {
     try {
       const fresh = await ReadFileAt(tab.path);
-      setTabContent(tab, fresh);
-      markTabSaved(tab);
+      tab.rawContent = fresh;
+      tab.savedContent = fresh;
     } catch {}
     pendingConflicts.delete(tab.path);
     renderActive();

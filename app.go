@@ -62,6 +62,13 @@ func (a *App) startup(ctx context.Context) {
 	_ = startIPCServer(func(paths []string) {
 		runtime.WindowShow(a.ctx)
 		runtime.WindowUnminimise(a.ctx)
+		// Truco anti-focus-stealing en Linux/GTK: forzamos al WM a
+		// elevar la ventana alternando AlwaysOnTop brevemente.
+		runtime.WindowSetAlwaysOnTop(a.ctx, true)
+		go func() {
+			time.Sleep(150 * time.Millisecond)
+			runtime.WindowSetAlwaysOnTop(a.ctx, false)
+		}()
 		runtime.EventsEmit(a.ctx, "open-paths", paths)
 	})
 
