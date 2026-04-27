@@ -2,17 +2,20 @@ import './style.css';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import hljs from 'highlight.js';
-import { ReadFileAt, SaveFileAt, OpenFilesDialog, GetStartupPaths, GetUserHome, GetFileStats } from '../wailsjs/go/main/App';
-import { Quit, WindowMinimise, WindowToggleMaximise, WindowFullscreen, WindowUnfullscreen, OnFileDrop } from '../wailsjs/runtime/runtime';
+import { ReadFileAt, SaveFileAt, OpenFilesDialog, GetStartupPaths, GetUserHome, GetFileStats, SaveMarkdownDialog, SaveHTMLDialog, SavePDFDialog, ExportPDF, WatchFile, UnwatchFile } from '../wailsjs/go/main/App';
+import { Quit, WindowMinimise, WindowToggleMaximise, WindowFullscreen, WindowUnfullscreen, OnFileDrop, EventsOn } from '../wailsjs/runtime/runtime';
 
 // ─── i18n ───────────────────────────────────────────────
 type Locale = 'es' | 'en';
 
 const translations: Record<Locale, Record<string, string>> = {
   es: {
-    'menu.file': 'Archivo', 'menu.file.open': 'Abrir', 'menu.file.save': 'Guardar',
+    'menu.file': 'Archivo', 'menu.file.new': 'Nuevo', 'menu.file.open': 'Abrir', 'menu.file.save': 'Guardar',
+    'menu.file.saveAs': 'Guardar como...', 'menu.file.exportPDF': 'Exportar como PDF...',
+    'menu.file.exportHTML': 'Exportar como HTML...',
     'menu.file.print': 'Imprimir', 'menu.file.settings': 'Configuración', 'menu.file.quit': 'Salir',
-    'menu.edit': 'Editar', 'menu.edit.mode': 'Modo edición',
+    'untitled': 'Sin título',
+    'menu.edit': 'Editar', 'menu.edit.mode': 'Modo edición', 'menu.edit.find': 'Buscar',
     'menu.edit.copyRich': 'Copiar como Rich Text', 'menu.edit.selectAll': 'Seleccionar todo',
     'menu.view': 'Ver', 'menu.view.zoomIn': 'Acercar', 'menu.view.zoomOut': 'Alejar',
     'menu.view.zoomReset': 'Restablecer zoom', 'menu.view.themeDark': 'Tema oscuro',
@@ -21,6 +24,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'menu.format': 'Formato', 'menu.format.bold': 'Negrita', 'menu.format.italic': 'Cursiva',
     'menu.format.strike': 'Tachado', 'menu.format.heading': 'Título', 'menu.format.quote': 'Cita',
     'menu.format.list': 'Lista', 'menu.format.code': 'Código inline', 'menu.format.codeblock': 'Bloque de código',
+    'menu.format.h1': 'Título 1', 'menu.format.h2': 'Título 2', 'menu.format.h3': 'Título 3', 'menu.format.h4': 'Título 4',
+    'menu.format.ol': 'Lista numerada', 'menu.format.tasklist': 'Lista de tareas',
+    'menu.format.hr': 'Línea horizontal', 'menu.format.image': 'Imagen', 'menu.format.table': 'Tabla',
     'menu.format.link': 'Enlace',
     'menu.go': 'Ir', 'menu.go.top': 'Inicio del documento', 'menu.go.bottom': 'Final del documento',
     'menu.tools': 'Herramientas', 'menu.tools.wordcount': 'Contar palabras',
@@ -30,21 +36,33 @@ const translations: Record<Locale, Record<string, string>> = {
     'empty.text': 'Abre un archivo Markdown desde el gestor de archivos<br>o arrástralo a esta ventana.',
     'toast.copied': 'Copiado al portapapeles', 'toast.copiedText': 'Copiado (solo texto)',
     'toast.saved': 'Guardado ✓', 'toast.errorOpen': 'Error al abrir archivo', 'toast.errorSave': 'Error al guardar',
-    'toast.wordcount': 'palabras',
+    'toast.wordcount': 'palabras', 'toast.exported': 'Exportado ✓', 'toast.exportingPDF': 'Generando PDF...', 'toast.noBrowser': 'No se encontró navegador para generar PDF. Usando diálogo de impresión.',
+    'toast.reloaded': 'Archivo recargado — modificado externamente',
+    'toast.removed': 'El archivo ya no existe en disco',
+    'banner.externalChange': 'fue modificado externamente.',
+    'banner.reloadFromDisk': 'Recargar del disco',
+    'banner.keepMyChanges': 'Conservar mis cambios',
+    'toolbar.new': 'Nuevo',
     'shortcuts.title': 'Atajos de teclado', 'shortcuts.open': 'Abrir archivo', 'shortcuts.save': 'Guardar',
+    'shortcuts.find': 'Buscar',
     'shortcuts.print': 'Imprimir', 'shortcuts.quit': 'Salir', 'shortcuts.editMode': 'Modo edición',
     'shortcuts.copyRich': 'Copiar Rich Text', 'shortcuts.zoomIn': 'Acercar', 'shortcuts.zoomOut': 'Alejar',
     'shortcuts.zoomReset': 'Restablecer zoom', 'shortcuts.fullscreen': 'Pantalla completa',
     'shortcuts.closeMenu': 'Cerrar menú / modal',
     'shortcuts.closeTab': 'Cerrar pestaña',
-    'about.subtitle': 'Visor de Markdown minimalista', 'about.version': 'Versión 1.1.0',
+    'about.subtitle': 'Visor de Markdown minimalista', 'about.version': 'Versión 1.2.0',
     'about.built': 'Construido con Wails + Go',
     'settings.title': 'Configuración', 'settings.language': 'Idioma', 'settings.colorTheme': 'Tema de color',
+    'settings.fullscreenShowUI': 'Mostrar barras en pantalla completa',
+    'search.placeholder': 'Buscar...', 'search.noResults': 'Sin resultados',
   },
   en: {
-    'menu.file': 'File', 'menu.file.open': 'Open', 'menu.file.save': 'Save',
+    'menu.file': 'File', 'menu.file.new': 'New', 'menu.file.open': 'Open', 'menu.file.save': 'Save',
+    'menu.file.saveAs': 'Save as...', 'menu.file.exportPDF': 'Export as PDF...',
+    'menu.file.exportHTML': 'Export as HTML...',
     'menu.file.print': 'Print', 'menu.file.settings': 'Settings', 'menu.file.quit': 'Quit',
-    'menu.edit': 'Edit', 'menu.edit.mode': 'Edit mode',
+    'untitled': 'Untitled',
+    'menu.edit': 'Edit', 'menu.edit.mode': 'Edit mode', 'menu.edit.find': 'Find',
     'menu.edit.copyRich': 'Copy as Rich Text', 'menu.edit.selectAll': 'Select all',
     'menu.view': 'View', 'menu.view.zoomIn': 'Zoom in', 'menu.view.zoomOut': 'Zoom out',
     'menu.view.zoomReset': 'Reset zoom', 'menu.view.themeDark': 'Dark theme',
@@ -53,6 +71,9 @@ const translations: Record<Locale, Record<string, string>> = {
     'menu.format': 'Format', 'menu.format.bold': 'Bold', 'menu.format.italic': 'Italic',
     'menu.format.strike': 'Strikethrough', 'menu.format.heading': 'Heading', 'menu.format.quote': 'Quote',
     'menu.format.list': 'List', 'menu.format.code': 'Inline code', 'menu.format.codeblock': 'Code block',
+    'menu.format.h1': 'Heading 1', 'menu.format.h2': 'Heading 2', 'menu.format.h3': 'Heading 3', 'menu.format.h4': 'Heading 4',
+    'menu.format.ol': 'Ordered list', 'menu.format.tasklist': 'Task list',
+    'menu.format.hr': 'Horizontal rule', 'menu.format.image': 'Image', 'menu.format.table': 'Table',
     'menu.format.link': 'Link',
     'menu.go': 'Go', 'menu.go.top': 'Start of document', 'menu.go.bottom': 'End of document',
     'menu.tools': 'Tools', 'menu.tools.wordcount': 'Word count',
@@ -62,16 +83,25 @@ const translations: Record<Locale, Record<string, string>> = {
     'empty.text': 'Open a Markdown file from the file manager<br>or drag it to this window.',
     'toast.copied': 'Copied to clipboard', 'toast.copiedText': 'Copied (text only)',
     'toast.saved': 'Saved ✓', 'toast.errorOpen': 'Error opening file', 'toast.errorSave': 'Error saving',
-    'toast.wordcount': 'words',
+    'toast.wordcount': 'words', 'toast.exported': 'Exported ✓', 'toast.exportingPDF': 'Generating PDF...', 'toast.noBrowser': 'No browser found for PDF export. Using print dialog.',
+    'toast.reloaded': 'File reloaded — modified externally',
+    'toast.removed': 'File no longer exists on disk',
+    'banner.externalChange': 'was modified externally.',
+    'banner.reloadFromDisk': 'Reload from disk',
+    'banner.keepMyChanges': 'Keep my changes',
+    'toolbar.new': 'New',
     'shortcuts.title': 'Keyboard shortcuts', 'shortcuts.open': 'Open file', 'shortcuts.save': 'Save',
+    'shortcuts.find': 'Find',
     'shortcuts.print': 'Print', 'shortcuts.quit': 'Quit', 'shortcuts.editMode': 'Edit mode',
     'shortcuts.copyRich': 'Copy Rich Text', 'shortcuts.zoomIn': 'Zoom in', 'shortcuts.zoomOut': 'Zoom out',
     'shortcuts.zoomReset': 'Reset zoom', 'shortcuts.fullscreen': 'Fullscreen',
     'shortcuts.closeMenu': 'Close menu / modal',
     'shortcuts.closeTab': 'Close tab',
-    'about.subtitle': 'Minimalist Markdown viewer', 'about.version': 'Version 1.1.0',
+    'about.subtitle': 'Minimalist Markdown viewer', 'about.version': 'Version 1.2.0',
     'about.built': 'Built with Wails + Go',
     'settings.title': 'Settings', 'settings.language': 'Language', 'settings.colorTheme': 'Color theme',
+    'settings.fullscreenShowUI': 'Show toolbars in fullscreen',
+    'search.placeholder': 'Find...', 'search.noResults': 'No results',
   },
 };
 
@@ -91,7 +121,7 @@ const colorThemes: Record<string, ColorTheme> = {
   default: {
     name: 'Default',
     light: { bg:'#ffffff', bgSurface:'#f4f4f5', bgHover:'#e4e4e7', text:'#18181b', textMuted:'#71717a', textHeading:'#09090b', accent:'#6366f1', accentHover:'#4f46e5', border:'#e4e4e7', codeColor:'#7c3aed' },
-    dark:  { bg:'#000000', bgSurface:'#121212', bgHover:'#1e1e1e', text:'#e4e4e7', textMuted:'#a1a1aa', textHeading:'#ffffff', accent:'#818cf8', accentHover:'#6366f1', border:'#2e2e2e', codeColor:'#c4b5fd' },
+    dark:  { bg:'#191919', bgSurface:'#212121', bgHover:'#2a2a2a', text:'#e4e4e7', textMuted:'#a1a1aa', textHeading:'#f5f5f5', accent:'#818cf8', accentHover:'#6366f1', border:'#333333', codeColor:'#c4b5fd' },
   },
   nord: {
     name: 'Nord',
@@ -121,17 +151,17 @@ const colorThemes: Record<string, ColorTheme> = {
   oceanic: {
     name: 'Oceanic',
     light: { bg:'#ffffff', bgSurface:'#f4f4f5', bgHover:'#e4e4e7', text:'#1e293b', textMuted:'#64748b', textHeading:'#0f172a', accent:'#0ea5e9', accentHover:'#0284c7', border:'#e2e8f0', codeColor:'#8b5cf6' },
-    dark:  { bg:'#000000', bgSurface:'#121212', bgHover:'#1e1e1e', text:'#e2e8f0', textMuted:'#94a3b8', textHeading:'#ffffff', accent:'#38bdf8', accentHover:'#0ea5e9', border:'#2d2d2d', codeColor:'#a78bfa' },
+    dark:  { bg:'#191919', bgSurface:'#212121', bgHover:'#2a2a2a', text:'#e2e8f0', textMuted:'#94a3b8', textHeading:'#f5f5f5', accent:'#38bdf8', accentHover:'#0ea5e9', border:'#333333', codeColor:'#a78bfa' },
   },
   sunset: {
     name: 'Sunset Coral',
     light: { bg:'#ffffff', bgSurface:'#f4f4f5', bgHover:'#e4e4e7', text:'#2d1b1b', textMuted:'#785a5a', textHeading:'#1a0f0f', accent:'#f43f5e', accentHover:'#e11d48', border:'#e4e4e7', codeColor:'#d946ef' },
-    dark:  { bg:'#000000', bgSurface:'#121212', bgHover:'#1e1e1e', text:'#f8ecec', textMuted:'#a38888', textHeading:'#ffffff', accent:'#fb7185', accentHover:'#f43f5e', border:'#2d2d2d', codeColor:'#f0abfc' },
+    dark:  { bg:'#191919', bgSurface:'#212121', bgHover:'#2a2a2a', text:'#f8ecec', textMuted:'#a38888', textHeading:'#f5f5f5', accent:'#fb7185', accentHover:'#f43f5e', border:'#333333', codeColor:'#f0abfc' },
   },
   emerald: {
     name: 'Emerald',
     light: { bg:'#ffffff', bgSurface:'#f4f4f5', bgHover:'#e4e4e7', text:'#14241d', textMuted:'#4a6b5d', textHeading:'#08120e', accent:'#10b981', accentHover:'#059669', border:'#e4e4e7', codeColor:'#059669' },
-    dark:  { bg:'#000000', bgSurface:'#121212', bgHover:'#1e1e1e', text:'#e6f0ec', textMuted:'#82a193', textHeading:'#ffffff', accent:'#34d399', accentHover:'#10b981', border:'#2d2d2d', codeColor:'#6ee7b7' },
+    dark:  { bg:'#191919', bgSurface:'#212121', bgHover:'#2a2a2a', text:'#e6f0ec', textMuted:'#82a193', textHeading:'#f5f5f5', accent:'#34d399', accentHover:'#10b981', border:'#333333', codeColor:'#6ee7b7' },
   }
 };
 
@@ -147,21 +177,21 @@ function applyColorTheme(themeName: string, darkMode: 'light' | 'dark') {
 }
 
 // ─── Preferences ────────────────────────────────────────
-interface Prefs { locale: Locale; colorTheme: string; darkMode: 'light' | 'dark'; zoomLevel: number; }
+interface Prefs { locale: Locale; colorTheme: string; darkMode: 'light' | 'dark'; zoomLevel: number; fullscreenShowUI: boolean; }
 
 function loadPrefs(): Prefs {
   try {
     const raw = localStorage.getItem('puremark-prefs');
     if (raw) {
       const p = JSON.parse(raw);
-      return { locale: p.locale || 'es', colorTheme: p.colorTheme || 'default', darkMode: p.darkMode || 'light', zoomLevel: p.zoomLevel || 1.0 };
+      return { locale: p.locale || 'es', colorTheme: p.colorTheme || 'default', darkMode: p.darkMode || 'light', zoomLevel: p.zoomLevel || 1.0, fullscreenShowUI: p.fullscreenShowUI ?? false };
     }
   } catch { /* ignore */ }
-  return { locale: 'es', colorTheme: 'default', darkMode: 'light', zoomLevel: 1.0 };
+  return { locale: 'es', colorTheme: 'default', darkMode: 'light', zoomLevel: 1.0, fullscreenShowUI: false };
 }
 
 function savePrefs() {
-  localStorage.setItem('puremark-prefs', JSON.stringify({ locale, colorTheme: currentColorTheme, darkMode: theme, zoomLevel }));
+  localStorage.setItem('puremark-prefs', JSON.stringify({ locale, colorTheme: currentColorTheme, darkMode: theme, zoomLevel, fullscreenShowUI }));
 }
 
 // ─── Tab Model ──────────────────────────────────────────
@@ -171,11 +201,17 @@ interface Tab {
   path: string;
   name: string;
   rawContent: string;
+  contentVersion: number;
   savedContent: string;
+  savedVersion: number;
   mode: 'view' | 'edit';
   undoStack: EditorSnapshot[];
   redoStack: EditorSnapshot[];
   lastSnapshotTime: number;
+  // UI state preservation per tab
+  scrollPos: number;
+  selStart: number;
+  selEnd: number;
 }
 
 let tabs: Tab[] = [];
@@ -187,6 +223,20 @@ function getActiveTab(): Tab | null {
 
 function basename(path: string): string {
   return path.split(/[/\\]/).pop() || path;
+}
+
+function setTabContent(tab: Tab, content: string) {
+  tab.rawContent = content;
+  tab.contentVersion++;
+}
+
+function markTabSaved(tab: Tab) {
+  tab.savedContent = tab.rawContent;
+  tab.savedVersion = tab.contentVersion;
+}
+
+function isTabDirty(tab: Tab): boolean {
+  return tab.contentVersion !== tab.savedVersion;
 }
 
 function isSupportedFile(path: string): boolean {
@@ -218,7 +268,7 @@ function editorUndo() {
   tab.redoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
   const snap = tab.undoStack.pop()!;
   editor.value = snap.text;
-  tab.rawContent = snap.text;
+  setTabContent(tab, snap.text);
   editor.setSelectionRange(snap.selStart, snap.selEnd);
 }
 
@@ -229,7 +279,7 @@ function editorRedo() {
   tab.undoStack.push({ text: editor.value, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
   const snap = tab.redoStack.pop()!;
   editor.value = snap.text;
-  tab.rawContent = snap.text;
+  setTabContent(tab, snap.text);
   editor.setSelectionRange(snap.selStart, snap.selEnd);
 }
 
@@ -241,21 +291,89 @@ let locale: Locale = prefs.locale;
 let currentColorTheme: string = prefs.colorTheme;
 let zoomTimeout: ReturnType<typeof setTimeout> | null = null;
 let isFullscreen = false;
+let fullscreenShowUI: boolean = prefs.fullscreenShowUI;
 let openMenu: string | null = null;
+let untitledCounter = 0;
+
+function isUntitled(tab: Tab): boolean {
+  return tab.path.startsWith('untitled:');
+}
+
+function newFile() {
+  untitledCounter++;
+  const syntheticPath = `untitled:${untitledCounter}`;
+  const name = `${t('untitled')} ${untitledCounter}`;
+  tabs.push({
+    path: syntheticPath,
+    name,
+    rawContent: '',
+    contentVersion: 0,
+    savedContent: '',
+    savedVersion: 0,
+    mode: 'edit',
+    undoStack: [],
+    redoStack: [],
+    lastSnapshotTime: 0,
+    scrollPos: 0,
+    selStart: 0,
+    selEnd: 0,
+  });
+  activeTabPath = syntheticPath;
+  renderActive();
+}
 
 marked.setOptions({ gfm: true, breaks: true });
 
 const renderer = new marked.Renderer();
+
+// ─── Image href resolver ────────────────────────────────
+// Convierte URLs relativas (./img.png, img.png, /abs/img.png o file://...) en
+// rutas same-origin servidas por el AssetServer Go (/__local/?p=<absolute-path>).
+// URLs http(s)/data se devuelven intactas.
+function resolveImageHref(href: string): string {
+  if (!href) return '';
+  if (/^(https?:|data:|blob:)/i.test(href)) return href;
+  if (/^\/__local\//.test(href)) return href;
+
+  let abs = href;
+  if (href.startsWith('file://')) {
+    abs = decodeURIComponent(href.slice('file://'.length));
+  } else if (href.startsWith('/')) {
+    abs = href;
+  } else {
+    const tab = getActiveTab();
+    if (!tab || isUntitled(tab)) return href;
+    const baseDir = tab.path.replace(/[^/\\]+$/, '');
+    abs = baseDir + href.replace(/^\.\//, '');
+  }
+  return '/__local/?p=' + encodeURIComponent(abs);
+}
+
+const origImageRenderer = renderer.image;
+renderer.image = function (this: unknown, ...args: Parameters<typeof origImageRenderer>) {
+  const token = args[0] as { href?: string; title?: string | null; text?: string };
+  const newHref = resolveImageHref(token.href ?? '');
+  const safeAlt = (token.text ?? '').replace(/"/g, '&quot;');
+  const titleAttr = token.title ? ` title="${(token.title as string).replace(/"/g, '&quot;')}"` : '';
+  return `<img src="${newHref}" alt="${safeAlt}"${titleAttr} loading="lazy" decoding="async">`;
+};
+
 const origCodeRenderer = renderer.code;
 renderer.code = function (this: unknown, ...args: Parameters<typeof origCodeRenderer>) {
   const token = args[0];
   const lang = typeof token === 'object' && token !== null ? (token as { lang?: string }).lang : undefined;
   const text = typeof token === 'object' && token !== null ? (token as { text?: string }).text ?? '' : String(token);
+
   let highlighted: string;
   if (lang && hljs.getLanguage(lang)) {
+    // Lenguaje conocido → rápido (lexer dirigido).
     highlighted = hljs.highlight(text, { language: lang }).value;
-  } else {
+  } else if (text.length < 2000) {
+    // Auto-detect SOLO en bloques pequeños — highlightAuto es O(N·M) y bloquea WebKitGTK.
     highlighted = hljs.highlightAuto(text).value;
+  } else {
+    // Bloques gigantes sin lenguaje → escape plano para no congelar la UI.
+    highlighted = escapeHtml(text);
   }
   return `<pre><code class="hljs${lang ? ` language-${lang}` : ''}">${highlighted}</code></pre>`;
 };
@@ -266,6 +384,24 @@ const appEl = document.getElementById('app')!;
 // Apply initial theme
 if (theme === 'dark') document.documentElement.classList.add('dark');
 applyColorTheme(currentColorTheme, theme);
+
+function resetRootScroll() {
+  const root = document.scrollingElement || document.documentElement;
+  root.scrollTop = 0;
+  root.scrollLeft = 0;
+  document.documentElement.scrollTop = 0;
+  document.documentElement.scrollLeft = 0;
+  document.body.scrollTop = 0;
+  document.body.scrollLeft = 0;
+  if (window.scrollX !== 0 || window.scrollY !== 0) {
+    window.scrollTo(0, 0);
+  }
+}
+
+function resetRootScrollAfterLayout() {
+  resetRootScroll();
+  requestAnimationFrame(resetRootScroll);
+}
 
 // ─── Unified open flow ──────────────────────────────────
 async function openPaths(paths: string[]) {
@@ -284,27 +420,46 @@ async function openPaths(paths: string[]) {
         path,
         name: basename(path),
         rawContent: content,
+        contentVersion: 0,
         savedContent: content,
+        savedVersion: 0,
         mode: 'view',
         undoStack: [],
         redoStack: [],
         lastSnapshotTime: 0,
+        scrollPos: 0,
+        selStart: 0,
+        selEnd: 0,
       });
       nextActive = path;
+      void WatchFile(path).catch(() => {});
     } catch {
       showToast(t('toast.errorOpen'));
     }
   }
 
   activeTabPath = nextActive;
-  render();
+  renderActive();
+}
+
+// Paths we just wrote to disk — used to ignore self-triggered fsnotify events.
+const recentSelfSave = new Map<string, number>();
+function markSelfSave(path: string) {
+  recentSelfSave.set(path, Date.now());
+}
+function isRecentSelfSave(path: string): boolean {
+  const t = recentSelfSave.get(path);
+  if (!t) return false;
+  if (Date.now() - t < 1500) return true;
+  recentSelfSave.delete(path);
+  return false;
 }
 
 function closeTab(path: string) {
   const tab = tabs.find(t => t.path === path);
   if (!tab) return;
 
-  if (tab.rawContent !== tab.savedContent) {
+  if (isTabDirty(tab)) {
     confirmCloseTab(tab);
     return;
   }
@@ -315,6 +470,9 @@ function closeTab(path: string) {
 function removeTab(path: string) {
   const idx = tabs.findIndex(t => t.path === path);
   if (idx === -1) return;
+  if (!path.startsWith('untitled:')) {
+    void UnwatchFile(path).catch(() => {});
+  }
   tabs.splice(idx, 1);
 
   if (activeTabPath === path) {
@@ -324,7 +482,7 @@ function removeTab(path: string) {
       activeTabPath = null;
     }
   }
-  render();
+  renderActive();
 }
 
 function confirmCloseTab(tab: Tab) {
@@ -350,8 +508,68 @@ function confirmCloseTab(tab: Tab) {
   overlay.querySelector('#ct-discard')?.addEventListener('click', () => { close(); removeTab(tab.path); });
   overlay.querySelector('#ct-cancel')?.addEventListener('click', close);
   overlay.querySelector('#ct-save')?.addEventListener('click', async () => {
-    try { await SaveFileAt(tab.path, tab.rawContent); tab.savedContent = tab.rawContent; } catch { showToast(t('toast.errorSave')); }
+    try {
+      if (isUntitled(tab)) {
+        const newPath = await SaveMarkdownDialog(`${t('untitled')}.md`);
+        if (!newPath) { close(); return; }
+        await SaveFileAt(newPath, tab.rawContent);
+        tab.path = newPath;
+        tab.name = basename(newPath);
+      } else {
+        await SaveFileAt(tab.path, tab.rawContent);
+      }
+      markTabSaved(tab);
+    } catch { showToast(t('toast.errorSave')); }
     close(); removeTab(tab.path);
+  });
+}
+
+// ─── Tab UI state preservation ──────────────────────────
+function saveCurrentTabState() {
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  if (tab.mode === 'edit') {
+    const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
+    if (editor) {
+      tab.selStart = editor.selectionStart;
+      tab.selEnd = editor.selectionEnd;
+      tab.scrollPos = editor.scrollTop;
+    }
+  } else {
+    const contentArea = document.getElementById('content-area');
+    if (contentArea) {
+      tab.scrollPos = contentArea.scrollTop;
+    }
+  }
+}
+
+function restoreCurrentTabState() {
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  const restore = () => {
+    if (activeTabPath !== tab.path) return;
+    if (tab.mode === 'edit') {
+      const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
+      if (editor) {
+        editor.setSelectionRange(tab.selStart, tab.selEnd);
+        editor.scrollTop = tab.scrollPos;
+        editor.focus();
+      }
+    } else {
+      const contentArea = document.getElementById('content-area');
+      if (contentArea) {
+        contentArea.scrollTop = tab.scrollPos;
+      }
+    }
+  };
+
+  // Dos frames: el primero espera al DOM, el segundo evita que WebKitGTK
+  // aplique scroll antes de tener medidas finales tras intercambiar contenido.
+  requestAnimationFrame(() => {
+    restore();
+    requestAnimationFrame(restore);
   });
 }
 
@@ -376,8 +594,14 @@ function render() {
         <div class="menu-item">
           <button class="menu-trigger" data-menu="file">${t('menu.file')}</button>
           <div class="menu-dropdown" id="menu-file">
+            <button class="menu-dropdown-item" id="mi-new">${t('menu.file.new')}<span class="shortcut">Ctrl+N</span></button>
             <button class="menu-dropdown-item" id="mi-open">${t('menu.file.open')}<span class="shortcut">Ctrl+O</span></button>
+            <div class="menu-separator"></div>
             <button class="menu-dropdown-item" id="mi-save" ${!hasFile ? 'disabled' : ''}>${t('menu.file.save')}<span class="shortcut">Ctrl+S</span></button>
+            <button class="menu-dropdown-item" id="mi-save-as" ${!hasFile ? 'disabled' : ''}>${t('menu.file.saveAs')}<span class="shortcut">Ctrl+Shift+S</span></button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="mi-export-pdf" ${!hasFile ? 'disabled' : ''}>${t('menu.file.exportPDF')}</button>
+            <button class="menu-dropdown-item" id="mi-export-html" ${!hasFile ? 'disabled' : ''}>${t('menu.file.exportHTML')}</button>
             <div class="menu-separator"></div>
             <button class="menu-dropdown-item" id="mi-print" ${!hasFile ? 'disabled' : ''}>${t('menu.file.print')}<span class="shortcut">Ctrl+P</span></button>
             <div class="menu-separator"></div>
@@ -390,6 +614,8 @@ function render() {
           <button class="menu-trigger" data-menu="edit">${t('menu.edit')}</button>
           <div class="menu-dropdown" id="menu-edit">
             <button class="menu-dropdown-item" id="mi-toggle-edit" ${!hasFile ? 'disabled' : ''}>${mode === 'edit' ? '✓ ' : ''}${t('menu.edit.mode')}<span class="shortcut">Ctrl+E</span></button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="mi-find" ${!hasFile ? 'disabled' : ''}>${t('menu.edit.find')}<span class="shortcut">Ctrl+F</span></button>
             <div class="menu-separator"></div>
             <button class="menu-dropdown-item" id="mi-copy" ${!hasFile || mode !== 'view' ? 'disabled' : ''}>${t('menu.edit.copyRich')}<span class="shortcut">Ctrl+Shift+C</span></button>
             <button class="menu-dropdown-item" id="mi-select-all" ${!hasFile ? 'disabled' : ''}>${t('menu.edit.selectAll')}<span class="shortcut">Ctrl+A</span></button>
@@ -419,13 +645,23 @@ function render() {
             <button class="menu-dropdown-item" id="mi-fmt-italic" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.italic')}<span class="shortcut">Ctrl+I</span></button>
             <button class="menu-dropdown-item" id="mi-fmt-strike" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.strike')}</button>
             <div class="menu-separator"></div>
-            <button class="menu-dropdown-item" id="mi-fmt-heading" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.heading')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-h1" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.h1')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-h2" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.h2')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-h3" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.h3')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-h4" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.h4')}</button>
+            <div class="menu-separator"></div>
             <button class="menu-dropdown-item" id="mi-fmt-quote" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.quote')}</button>
             <button class="menu-dropdown-item" id="mi-fmt-list" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.list')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-ol" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.ol')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-tasklist" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.tasklist')}</button>
+            <div class="menu-separator"></div>
+            <button class="menu-dropdown-item" id="mi-fmt-link" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.link')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-image" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.image')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-table" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.table')}</button>
+            <button class="menu-dropdown-item" id="mi-fmt-hr" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.hr')}</button>
             <div class="menu-separator"></div>
             <button class="menu-dropdown-item" id="mi-fmt-code" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.code')}</button>
             <button class="menu-dropdown-item" id="mi-fmt-codeblock" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.codeblock')}</button>
-            <button class="menu-dropdown-item" id="mi-fmt-link" ${!hasFile || mode !== 'edit' ? 'disabled' : ''}>${t('menu.format.link')}</button>
           </div>
         </div>
         <div class="menu-item">
@@ -451,6 +687,7 @@ function render() {
       </div>
     </div>
     <div id="main-toolbar">
+      <button class="tb-btn" id="tb-new"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>${t('toolbar.new')}</button>
       <button class="tb-btn" id="tb-open"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>${t('toolbar.open')}</button>
       <button class="tb-btn" id="tb-save" ${!hasFile ? 'disabled' : ''}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>${t('toolbar.save')}</button>
       <button class="tb-btn" id="tb-print" ${!hasFile ? 'disabled' : ''}><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>${t('toolbar.print')}</button>
@@ -473,7 +710,7 @@ function render() {
     </div>
     <div id="status-bar">
       <div class="status-left">
-        <span id="sb-path">${tab ? escapeHtml(prettyPath(tab.path)) : ''}</span>
+        <span id="sb-path">${tab ? escapeHtml(isUntitled(tab) ? tab.name : prettyPath(tab.path)) : ''}</span>
         <span class="sb-sep">|</span>
         <span id="sb-lines">—</span>
         <span class="sb-sep">|</span>
@@ -494,6 +731,10 @@ function render() {
   `;
   bindRenderEvents();
   updateStatusBar();
+  renderConflictBanner();
+  restoreCurrentTabState();
+  syncSearchAfterRender();
+  resetRootScrollAfterLayout();
 }
 
 function renderTabBar(): string {
@@ -501,7 +742,7 @@ function renderTabBar(): string {
     <button class="tabbar-scroll tabbar-scroll-left" id="tab-scroll-left">‹</button>
     <div class="tabbar" id="tabbar-inner">${tabs.map(tab => {
       const isActive = tab.path === activeTabPath;
-      const isDirty = tab.rawContent !== tab.savedContent;
+      const isDirty = isTabDirty(tab);
       return `<div class="tab${isActive ? ' active' : ''}" data-tab-path="${escapeAttr(tab.path)}" title="${escapeAttr(prettyPath(tab.path))}">
         <span class="tab-name">${isDirty ? '● ' : ''}${escapeHtml(tab.name)}</span>
         <button class="tab-close" data-close-path="${escapeAttr(tab.path)}" title="">✕</button>
@@ -515,35 +756,71 @@ function renderEmpty(): string {
   return `<div class="empty-state"><div class="empty-state-icon">📄</div><div class="empty-state-text">${t('empty.text')}</div></div>`;
 }
 
+// Caché de HTML parseado por pestaña: evita re-parsear marked + DOMPurify
+// en cada cambio de pestaña o re-render que no cambia rawContent.
+const proseCache = new WeakMap<Tab, { version: number; html: string }>();
+
+function getProseHTML(tab: Tab): string {
+  const cached = proseCache.get(tab);
+  if (cached && cached.version === tab.contentVersion) return cached.html;
+  const html = DOMPurify.sanitize(marked.parse(tab.rawContent) as string);
+  proseCache.set(tab, { version: tab.contentVersion, html });
+  return html;
+}
+
 function renderContent(tab: Tab): string {
   document.documentElement.style.setProperty('--zoom', String(zoomLevel));
   if (tab.mode === 'view') {
-    const html = DOMPurify.sanitize(marked.parse(tab.rawContent) as string);
-    return `<div class="container view-container"><div class="prose" id="prose-content">${html}</div></div>`;
+    return `<div class="container view-container"><div class="prose" id="prose-content" data-tab-path="${escapeAttr(tab.path)}" data-content-version="${tab.contentVersion}">${getProseHTML(tab)}</div></div>`;
   } else {
     return `
       <div class="container edit-container">
         <div class="editor-wrapper">
           <div class="editor-toolbar">
-            <button class="et-btn" data-action="bold" title="Negrita" style="font-weight: bold; font-family: 'Times New Roman', serif;">B</button>
-            <button class="et-btn" data-action="italic" title="Cursiva" style="font-style: italic; font-family: 'Times New Roman', serif;">I</button>
-            <button class="et-btn" data-action="strike" title="Tachado" style="text-decoration: line-through;">S</button>
+            <button class="et-btn" data-action="bold" title="${t('menu.format.bold')} (Ctrl+B)" style="font-weight: bold; font-family: 'Times New Roman', serif;">B</button>
+            <button class="et-btn" data-action="italic" title="${t('menu.format.italic')} (Ctrl+I)" style="font-style: italic; font-family: 'Times New Roman', serif;">I</button>
+            <button class="et-btn" data-action="strike" title="${t('menu.format.strike')}" style="text-decoration: line-through;">S</button>
             <div class="et-divider"></div>
-            <button class="et-btn" data-action="h2" title="Título 2" style="font-weight: 600;">H<sub style="font-size: 0.65em; vertical-align: sub;">2</sub></button>
-            <button class="et-btn" data-action="quote" title="Cita">
+            <div class="et-dropdown-wrap">
+              <button class="et-btn et-dropdown-trigger" id="et-heading-trigger" title="${t('menu.format.heading')}" style="font-weight: 600;">H<svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor" style="margin-left:1px;opacity:0.6;"><path d="M2 4l4 4 4-4z"/></svg></button>
+              <div class="et-dropdown" id="et-heading-dropdown">
+                <button class="et-dropdown-item" data-action="h1"><span style="font-size:16px;font-weight:700;">H1</span></button>
+                <button class="et-dropdown-item" data-action="h2"><span style="font-size:14px;font-weight:600;">H2</span></button>
+                <button class="et-dropdown-item" data-action="h3"><span style="font-size:13px;font-weight:600;">H3</span></button>
+                <button class="et-dropdown-item" data-action="h4"><span style="font-size:12px;font-weight:500;">H4</span></button>
+              </div>
+            </div>
+            <button class="et-btn" data-action="quote" title="${t('menu.format.quote')}">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21c3 0 7-1 7-8V5c0-1.25-.756-2.017-2-2H4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2 1 0 1 0 1 1v1c0 1-1 2-2 2s-1 .008-1 1.031V20c0 1 0 1 1 1z"/><path d="M15 21c3 0 7-1 7-8V5c0-1.25-.757-2.017-2-2h-4c-1.25 0-2 .75-2 1.972V11c0 1.25.75 2 2 2h.75c0 2.25.25 4-2.75 4v3c0 1 0 1 1 1z"/></svg>
             </button>
-            <button class="et-btn" data-action="list" title="Lista">
-              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-            </button>
+            <div class="et-dropdown-wrap">
+              <button class="et-btn et-dropdown-trigger" id="et-list-trigger" title="${t('menu.format.list')}">
+                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg><svg width="8" height="8" viewBox="0 0 12 12" fill="currentColor" style="margin-left:1px;opacity:0.6;"><path d="M2 4l4 4 4-4z"/></svg>
+              </button>
+              <div class="et-dropdown" id="et-list-dropdown">
+                <button class="et-dropdown-item" data-action="list">${t('menu.format.list')}</button>
+                <button class="et-dropdown-item" data-action="ol">${t('menu.format.ol')}</button>
+                <button class="et-dropdown-item" data-action="tasklist">${t('menu.format.tasklist')}</button>
+              </div>
+            </div>
             <div class="et-divider"></div>
-            <button class="et-btn" data-action="link" title="Enlace">
+            <button class="et-btn" data-action="link" title="${t('menu.format.link')}">
               <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
             </button>
-            <button class="et-btn et-code" data-action="code" title="Código Inline">&lt;&gt;</button>
-            <button class="et-btn et-code" data-action="codeblock" title="Bloque de Código">&lt;/&gt;</button>
+            <button class="et-btn" data-action="image" title="${t('menu.format.image')}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+            </button>
+            <button class="et-btn" data-action="table" title="${t('menu.format.table')}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+            </button>
+            <button class="et-btn" data-action="hr" title="${t('menu.format.hr')}">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="12" x2="21" y2="12"/></svg>
+            </button>
+            <div class="et-divider"></div>
+            <button class="et-btn et-code" data-action="code" title="${t('menu.format.code')}">&lt;&gt;</button>
+            <button class="et-btn et-code" data-action="codeblock" title="${t('menu.format.codeblock')}">&lt;/&gt;</button>
           </div>
-          <textarea class="editor" id="editor" spellcheck="false">${escapeHtml(tab.rawContent)}</textarea>
+          <textarea class="editor" id="editor" spellcheck="false" data-tab-path="${escapeAttr(tab.path)}">${escapeHtml(tab.rawContent)}</textarea>
         </div>
       </div>
     `;
@@ -588,12 +865,20 @@ function insertMarkdown(action: string) {
     bold:      { es: 'negrita',          en: 'bold' },
     italic:    { es: 'cursiva',          en: 'italic' },
     strike:    { es: 'tachado',          en: 'strikethrough' },
+    h1:        { es: 'Título 1',         en: 'Heading 1' },
     h2:        { es: 'Título 2',         en: 'Heading 2' },
+    h3:        { es: 'Título 3',         en: 'Heading 3' },
+    h4:        { es: 'Título 4',         en: 'Heading 4' },
     quote:     { es: 'Cita',             en: 'Quote' },
     list:      { es: 'Elemento',         en: 'Item' },
+    ol:        { es: 'Elemento',         en: 'Item' },
+    tasklist:  { es: 'Tarea',            en: 'Task' },
     link:      { es: 'texto del enlace', en: 'link text' },
+    image:     { es: 'descripción',      en: 'description' },
     code:      { es: 'código',           en: 'code' },
     codeblock: { es: 'código aquí',      en: 'code here' },
+    table:     { es: '',                 en: '' },
+    hr:        { es: '',                 en: '' },
   };
   const defaultText = defaults[action]?.[locale] || defaults[action]?.['es'] || '';
 
@@ -601,12 +886,31 @@ function insertMarkdown(action: string) {
     case 'bold': prefix = '**'; suffix = '**'; break;
     case 'italic': prefix = '*'; suffix = '*'; break;
     case 'strike': prefix = '~~'; suffix = '~~'; break;
+    case 'h1': prefix = '\n# '; break;
     case 'h2': prefix = '\n## '; break;
+    case 'h3': prefix = '\n### '; break;
+    case 'h4': prefix = '\n#### '; break;
     case 'quote': prefix = '\n> '; break;
     case 'list': prefix = '\n- '; break;
+    case 'ol': prefix = '\n1. '; break;
+    case 'tasklist': prefix = '\n- [ ] '; break;
     case 'link': prefix = '['; suffix = '](url)'; break;
+    case 'image': prefix = '!['; suffix = '](url)'; break;
     case 'code': prefix = '`'; suffix = '`'; break;
     case 'codeblock': prefix = '\n```\n'; suffix = '\n```\n'; break;
+    case 'hr': prefix = '\n---\n'; break;
+    case 'table': prefix = '\n'; suffix = '\n'; break;
+  }
+
+  if (action === 'table') {
+    const tableTemplate = `| ${locale === 'es' ? 'Columna 1' : 'Column 1'} | ${locale === 'es' ? 'Columna 2' : 'Column 2'} | ${locale === 'es' ? 'Columna 3' : 'Column 3'} |\n|---|---|---|\n|   |   |   |\n|   |   |   |`;
+    pushUndo(tab, { text: text, selStart: start, selEnd: end });
+    editor.focus();
+    editor.setSelectionRange(start, end);
+    const insert = (start === 0 ? '' : '\n') + tableTemplate + '\n';
+    document.execCommand('insertText', false, insert);
+    setTabContent(tab, editor.value);
+    return;
   }
 
   if (start === 0 && prefix.startsWith('\n')) {
@@ -620,7 +924,7 @@ function insertMarkdown(action: string) {
   editor.focus();
   editor.setSelectionRange(start, end);
   document.execCommand('insertText', false, replacement);
-  tab.rawContent = editor.value;
+  setTabContent(tab, editor.value);
 
   if (selectedText) {
     editor.setSelectionRange(start, start + replacement.length);
@@ -629,10 +933,116 @@ function insertMarkdown(action: string) {
   }
 }
 
+// ─── Imperative chrome state sync (used by partial render) ─────
+// Avoid re-creating Toolbar/Menu DOM. Just flip disabled / active flags.
+function updateChromeStates() {
+  const tab = getActiveTab();
+  const hasFile = tab !== null;
+  const mode = tab?.mode || 'view';
+
+  const setDis = (id: string, dis: boolean) => {
+    const el = document.getElementById(id) as HTMLButtonElement | null;
+    if (el) el.disabled = dis;
+  };
+
+  // Toolbar
+  setDis('tb-save', !hasFile);
+  setDis('tb-print', !hasFile);
+  setDis('tb-edit', !hasFile);
+  setDis('tb-copy', !hasFile || mode !== 'view');
+  setDis('tb-zoom-in', !hasFile);
+  setDis('tb-zoom-out', !hasFile);
+  document.getElementById('tb-edit')?.classList.toggle('active', mode === 'edit');
+
+  // File menu
+  ['mi-save', 'mi-save-as', 'mi-export-pdf', 'mi-export-html', 'mi-print']
+    .forEach(id => setDis(id, !hasFile));
+
+  // Edit menu (with checkmark refresh on toggle-edit)
+  setDis('mi-toggle-edit', !hasFile);
+  setDis('mi-find', !hasFile);
+  setDis('mi-copy', !hasFile || mode !== 'view');
+  setDis('mi-select-all', !hasFile);
+  const miToggleEdit = document.getElementById('mi-toggle-edit');
+  if (miToggleEdit) {
+    miToggleEdit.innerHTML = `${mode === 'edit' ? '✓ ' : ''}${t('menu.edit.mode')}<span class="shortcut">Ctrl+E</span>`;
+  }
+
+  // View / Doc / Go / Tools
+  ['mi-zoom-in', 'mi-zoom-out', 'mi-zoom-reset', 'mi-doc-info',
+    'mi-go-top', 'mi-go-bottom', 'mi-wordcount']
+    .forEach(id => setDis(id, !hasFile));
+
+  // Format menu
+  ['mi-fmt-bold', 'mi-fmt-italic', 'mi-fmt-strike', 'mi-fmt-h1', 'mi-fmt-h2', 'mi-fmt-h3', 'mi-fmt-h4',
+    'mi-fmt-quote', 'mi-fmt-list', 'mi-fmt-ol', 'mi-fmt-tasklist', 'mi-fmt-link', 'mi-fmt-image',
+    'mi-fmt-table', 'mi-fmt-hr', 'mi-fmt-code', 'mi-fmt-codeblock']
+    .forEach(id => setDis(id, !hasFile || mode !== 'edit'));
+
+  // Status bar path
+  const sbPath = document.getElementById('sb-path');
+  if (sbPath) sbPath.textContent = tab ? (isUntitled(tab) ? tab.name : prettyPath(tab.path)) : '';
+}
+
+// Partial render: solo actualiza tab-bar y content-area sin rebobinar la chrome.
+// Esto evita re-parsear miles de nodos del menú/toolbar en cada cambio de pestaña.
+//
+// Importante: NO reemplazamos el `.view-container` / `.edit-container` si el modo
+// no ha cambiado — solo intercambiamos el HTML interno del `.prose` o el `value`
+// del editor. Así evitamos:
+//   1) re-disparar la animación `fadeIn` (que crea compositing layers nuevas y
+//      en WebKitGTK deja fantasmas de la capa previa al cambiar scroll).
+//   2) crear/destruir nodos pesados innecesariamente.
+function renderActive() {
+  const tab = getActiveTab();
+  const tabBarEl = document.getElementById('tab-bar');
+  const contentEl = document.getElementById('content-area');
+  if (!tabBarEl || !contentEl) {
+    // Aún no hay shell montada — caer en render completo.
+    render();
+    return;
+  }
+
+  tabBarEl.innerHTML = renderTabBar();
+
+  // Intercambio in-place cuando el modo del contenedor coincide con el de la pestaña.
+  if (tab) {
+    document.documentElement.style.setProperty('--zoom', String(zoomLevel));
+    const proseEl = contentEl.querySelector('#prose-content') as HTMLElement | null;
+    const editorEl = contentEl.querySelector('#editor') as HTMLTextAreaElement | null;
+
+    if (tab.mode === 'view' && proseEl) {
+      const fresh = getProseHTML(tab);
+      if (proseEl.dataset.tabPath !== tab.path || proseEl.dataset.contentVersion !== String(tab.contentVersion)) {
+        proseEl.innerHTML = fresh;
+        proseEl.dataset.tabPath = tab.path;
+        proseEl.dataset.contentVersion = String(tab.contentVersion);
+      }
+    } else if (tab.mode === 'edit' && editorEl) {
+      if (editorEl.dataset.tabPath !== tab.path || editorEl.value !== tab.rawContent) {
+        editorEl.value = tab.rawContent;
+        editorEl.dataset.tabPath = tab.path;
+      }
+    } else {
+      // Cambio real de modo (view ↔ edit) o primer montaje del contenido.
+      contentEl.innerHTML = renderContent(tab);
+    }
+  } else {
+    contentEl.innerHTML = renderEmpty();
+  }
+
+  updateChromeStates();
+  bindTabBarEvents();
+  bindContentEvents();
+  updateStatusBar();
+  renderConflictBanner();
+  restoreCurrentTabState();
+  syncSearchAfterRender();
+  resetRootScrollAfterLayout();
+}
+
 // ─── Render Events (rebound on each render) ─────────────
 function bindRenderEvents() {
-  const tab = getActiveTab();
-
   document.getElementById('btn-close')?.addEventListener('click', () => confirmQuit());
   document.getElementById('btn-min')?.addEventListener('click', () => WindowMinimise());
   document.getElementById('btn-max')?.addEventListener('click', () => WindowToggleMaximise());
@@ -659,13 +1069,18 @@ function bindRenderEvents() {
   });
 
   // Menu items
+  document.getElementById('mi-new')?.addEventListener('click', () => { closeMenu(); newFile(); });
   document.getElementById('mi-open')?.addEventListener('click', () => { closeMenu(); openFileDialog(); });
   document.getElementById('mi-save')?.addEventListener('click', () => { closeMenu(); saveActiveTab(); });
+  document.getElementById('mi-save-as')?.addEventListener('click', () => { closeMenu(); saveAsActiveTab(); });
+  document.getElementById('mi-export-pdf')?.addEventListener('click', () => { closeMenu(); exportPDF(); });
+  document.getElementById('mi-export-html')?.addEventListener('click', () => { closeMenu(); exportHTML(); });
   document.getElementById('mi-print')?.addEventListener('click', () => { closeMenu(); printDocument(); });
   document.getElementById('mi-settings')?.addEventListener('click', () => { closeMenu(); showSettings(); });
   document.getElementById('mi-quit')?.addEventListener('click', () => { closeMenu(); confirmQuit(); });
 
   document.getElementById('mi-toggle-edit')?.addEventListener('click', () => { closeMenu(); toggleMode(); });
+  document.getElementById('mi-find')?.addEventListener('click', () => { closeMenu(); openSearch(); });
   document.getElementById('mi-copy')?.addEventListener('click', () => { closeMenu(); copyRichText(); });
   document.getElementById('mi-select-all')?.addEventListener('click', () => { closeMenu(); selectAll(); });
 
@@ -682,12 +1097,20 @@ function bindRenderEvents() {
   document.getElementById('mi-fmt-bold')?.addEventListener('click', () => { closeMenu(); insertMarkdown('bold'); });
   document.getElementById('mi-fmt-italic')?.addEventListener('click', () => { closeMenu(); insertMarkdown('italic'); });
   document.getElementById('mi-fmt-strike')?.addEventListener('click', () => { closeMenu(); insertMarkdown('strike'); });
-  document.getElementById('mi-fmt-heading')?.addEventListener('click', () => { closeMenu(); insertMarkdown('h2'); });
+  document.getElementById('mi-fmt-h1')?.addEventListener('click', () => { closeMenu(); insertMarkdown('h1'); });
+  document.getElementById('mi-fmt-h2')?.addEventListener('click', () => { closeMenu(); insertMarkdown('h2'); });
+  document.getElementById('mi-fmt-h3')?.addEventListener('click', () => { closeMenu(); insertMarkdown('h3'); });
+  document.getElementById('mi-fmt-h4')?.addEventListener('click', () => { closeMenu(); insertMarkdown('h4'); });
   document.getElementById('mi-fmt-quote')?.addEventListener('click', () => { closeMenu(); insertMarkdown('quote'); });
   document.getElementById('mi-fmt-list')?.addEventListener('click', () => { closeMenu(); insertMarkdown('list'); });
+  document.getElementById('mi-fmt-ol')?.addEventListener('click', () => { closeMenu(); insertMarkdown('ol'); });
+  document.getElementById('mi-fmt-tasklist')?.addEventListener('click', () => { closeMenu(); insertMarkdown('tasklist'); });
+  document.getElementById('mi-fmt-link')?.addEventListener('click', () => { closeMenu(); insertMarkdown('link'); });
+  document.getElementById('mi-fmt-image')?.addEventListener('click', () => { closeMenu(); insertMarkdown('image'); });
+  document.getElementById('mi-fmt-table')?.addEventListener('click', () => { closeMenu(); insertMarkdown('table'); });
+  document.getElementById('mi-fmt-hr')?.addEventListener('click', () => { closeMenu(); insertMarkdown('hr'); });
   document.getElementById('mi-fmt-code')?.addEventListener('click', () => { closeMenu(); insertMarkdown('code'); });
   document.getElementById('mi-fmt-codeblock')?.addEventListener('click', () => { closeMenu(); insertMarkdown('codeblock'); });
-  document.getElementById('mi-fmt-link')?.addEventListener('click', () => { closeMenu(); insertMarkdown('link'); });
 
   // Go menu
   document.getElementById('mi-go-top')?.addEventListener('click', () => { closeMenu(); goToPosition('top'); });
@@ -700,6 +1123,7 @@ function bindRenderEvents() {
   document.getElementById('mi-about')?.addEventListener('click', () => { closeMenu(); showAbout(); });
 
   // Main toolbar buttons
+  document.getElementById('tb-new')?.addEventListener('click', () => newFile());
   document.getElementById('tb-open')?.addEventListener('click', () => openFileDialog());
   document.getElementById('tb-save')?.addEventListener('click', () => saveActiveTab());
   document.getElementById('tb-print')?.addEventListener('click', () => printDocument());
@@ -732,7 +1156,13 @@ function bindRenderEvents() {
   }
   document.getElementById('sb-fullscreen')?.addEventListener('click', () => toggleFullscreen());
 
-  // Tab bar events
+  // Tab bar + content events (also rebound by renderActive)
+  bindTabBarEvents();
+  bindContentEvents();
+}
+
+// Tab bar event binding (rebound after partial renders since tab nodes are recreated).
+function bindTabBarEvents() {
   const tabbar = document.getElementById('tabbar-inner') as HTMLElement | null;
 
   document.querySelectorAll('.tab').forEach(tabEl => {
@@ -741,8 +1171,9 @@ function bindRenderEvents() {
       if (closeBtn) return;
       const path = (tabEl as HTMLElement).dataset.tabPath;
       if (path && path !== activeTabPath) {
+        saveCurrentTabState();
         activeTabPath = path;
-        render();
+        renderActive();
       }
     });
   });
@@ -792,38 +1223,87 @@ function bindRenderEvents() {
     // Evaluar visibilidad inicial tras layout
     requestAnimationFrame(updateScrollArrows);
   }
+}
 
-  // Editor-specific events
-  if (tab && tab.mode === 'edit') {
-    document.querySelectorAll('.et-btn').forEach(btn => {
-      btn.addEventListener('click', (e) => {
-        e.preventDefault();
-        const action = (e.currentTarget as HTMLElement).dataset.action;
-        if (action) insertMarkdown(action);
-      });
+// Content (editor + editor-toolbar) event binding.
+function bindContentEvents() {
+  const tab = getActiveTab();
+  const contentArea = document.getElementById('content-area');
+  if (contentArea) {
+    contentArea.onscroll = () => {
+      const active = getActiveTab();
+      if (active && active.mode !== 'edit') active.scrollPos = contentArea.scrollTop;
+    };
+  }
+
+  if (!tab || tab.mode !== 'edit') return;
+
+  // Direct action buttons (not dropdown triggers)
+  document.querySelectorAll('.et-btn:not(.et-dropdown-trigger)').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      const action = (e.currentTarget as HTMLElement).dataset.action;
+      if (action) insertMarkdown(action);
+    });
+  });
+
+  // Dropdown items inside editor toolbar
+  document.querySelectorAll('.et-dropdown-item').forEach(btn => {
+    btn.addEventListener('mousedown', (e) => e.preventDefault());
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const action = (e.currentTarget as HTMLElement).dataset.action;
+      document.querySelectorAll('.et-dropdown').forEach(d => d.classList.remove('visible'));
+      if (action) insertMarkdown(action);
+    });
+  });
+
+  // Dropdown triggers
+  document.querySelectorAll('.et-dropdown-trigger').forEach(trigger => {
+    trigger.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const wrap = (e.currentTarget as HTMLElement).closest('.et-dropdown-wrap');
+      const dropdown = wrap?.querySelector('.et-dropdown');
+      if (!dropdown) return;
+      const wasVisible = dropdown.classList.contains('visible');
+      document.querySelectorAll('.et-dropdown').forEach(d => d.classList.remove('visible'));
+      if (!wasVisible) dropdown.classList.add('visible');
+    });
+  });
+
+  const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
+  if (editor) {
+    editor.onscroll = () => {
+      const active = getActiveTab();
+      if (active?.mode === 'edit') active.scrollPos = editor.scrollTop;
+    };
+
+    if (tab.undoStack.length === 0) {
+      pushUndo(tab, { text: editor.value, selStart: 0, selEnd: 0 });
+    }
+
+    editor.addEventListener('input', () => {
+      const now = Date.now();
+      if (now - tab.lastSnapshotTime > SNAPSHOT_DEBOUNCE) {
+        pushUndo(tab, { text: tab.rawContent, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
+        tab.lastSnapshotTime = now;
+      }
+      setTabContent(tab, editor.value);
     });
 
-    const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
-    if (editor) {
-      tab.undoStack.length = 0;
-      tab.redoStack.length = 0;
-      pushUndo(tab, { text: editor.value, selStart: 0, selEnd: 0 });
-
-      editor.addEventListener('input', () => {
-        const now = Date.now();
-        if (now - tab.lastSnapshotTime > SNAPSHOT_DEBOUNCE) {
-          pushUndo(tab, { text: tab.rawContent, selStart: editor.selectionStart, selEnd: editor.selectionEnd });
-          tab.lastSnapshotTime = now;
-        }
-        tab.rawContent = editor.value;
-      });
-    }
+    // Close editor dropdowns when clicking editor area
+    editor.addEventListener('click', () => {
+      document.querySelectorAll('.et-dropdown').forEach(d => d.classList.remove('visible'));
+    });
   }
 }
 
 async function updateStatusBar() {
   const tab = getActiveTab();
   if (!tab) return;
+  if (isUntitled(tab)) return;
   try {
     const stats = await GetFileStats(tab.path);
     if (!stats) return;
@@ -909,8 +1389,9 @@ async function openFileDialog() {
 function toggleMode() {
   const tab = getActiveTab();
   if (!tab) return;
+  saveCurrentTabState();
   tab.mode = tab.mode === 'view' ? 'edit' : 'view';
-  render();
+  renderActive();
 }
 
 async function copyRichText() {
@@ -933,16 +1414,120 @@ async function copyRichText() {
 async function saveActiveTab() {
   const tab = getActiveTab();
   if (!tab) return;
+  if (isUntitled(tab)) {
+    await saveAsActiveTab();
+    return;
+  }
   try {
+    markSelfSave(tab.path);
     await SaveFileAt(tab.path, tab.rawContent);
-    tab.savedContent = tab.rawContent;
+    markTabSaved(tab);
     showToast(t('toast.saved'));
-    // Update dirty indicator in tab bar if visible
     const tabEl = document.querySelector(`.tab[data-tab-path="${CSS.escape(tab.path)}"] .tab-name`);
-    if (tabEl) {
-      tabEl.textContent = tab.name;
-    }
+    if (tabEl) tabEl.textContent = tab.name;
   } catch { showToast(t('toast.errorSave')); }
+}
+
+async function saveAsActiveTab() {
+  const tab = getActiveTab();
+  if (!tab) return;
+  try {
+    const defaultName = isUntitled(tab) ? `${t('untitled')}.md` : tab.name;
+    const newPath = await SaveMarkdownDialog(defaultName);
+    if (!newPath) return;
+    markSelfSave(newPath);
+    await SaveFileAt(newPath, tab.rawContent);
+    const oldPath = tab.path;
+    if (!oldPath.startsWith('untitled:') && oldPath !== newPath) {
+      void UnwatchFile(oldPath).catch(() => {});
+    }
+    tab.path = newPath;
+    tab.name = basename(newPath);
+    markTabSaved(tab);
+    if (activeTabPath === oldPath) activeTabPath = newPath;
+    void WatchFile(newPath).catch(() => {});
+    showToast(t('toast.saved'));
+    renderActive();
+  } catch { showToast(t('toast.errorSave')); }
+}
+
+function buildExportHTML(tab: Tab, opts: { forceLight?: boolean; forPDF?: boolean } = {}): string {
+  const renderedHTML = DOMPurify.sanitize(marked.parse(tab.rawContent) as string);
+  const ct = colorThemes[opts.forceLight ? 'default' : currentColorTheme] || colorThemes['default'];
+  const c = opts.forceLight ? ct.light : ct[theme];
+
+  const pdfPageCSS = opts.forPDF ? `
+@page { size: A4; margin: 14mm; }
+html, body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }` : '';
+
+  return `<!DOCTYPE html>
+<html lang="${locale}">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escapeHtml(tab.name)}</title>
+<style>
+body { max-width: 48rem; margin: 2rem auto; padding: 0 1.5rem; background: ${c.bg}; color: ${c.text}; font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Noto Color Emoji', sans-serif; font-size: 16px; line-height: 1.75; }
+h1, h2, h3, h4, h5, h6 { color: ${c.textHeading}; font-weight: 600; line-height: 1.3; margin-top: 2em; margin-bottom: 0.75em; }
+h1 { font-size: 2em; margin-top: 0; } h2 { font-size: 1.5em; border-bottom: 1px solid ${c.border}; padding-bottom: 0.3em; } h3 { font-size: 1.25em; }
+p { margin-bottom: 1.25em; }
+a { color: ${c.accent}; text-decoration: none; } a:hover { text-decoration: underline; }
+code { font-family: 'JetBrains Mono', 'Fira Code', monospace; background: ${c.bgSurface}; padding: 0.2em 0.4em; border-radius: 4px; font-size: 0.875em; color: ${c.codeColor}; }
+pre { background: ${c.bgSurface}; padding: 1em; border-radius: 8px; overflow-x: auto; border: 1px solid ${c.border}; margin-bottom: 1.5em; }
+pre code { background: none; padding: 0; color: ${c.text}; }
+blockquote { border-left: 3px solid ${c.accent}; padding: 0.5em 1em; margin: 1.5em 0; background: ${c.bgSurface}; border-radius: 0 6px 6px 0; color: ${c.textMuted}; }
+table { width: 100%; border-collapse: collapse; margin: 1.5em 0; } th, td { padding: 0.5em 1em; border: 1px solid ${c.border}; text-align: left; }
+th { background: ${c.bgSurface}; font-weight: 600; color: ${c.textHeading}; }
+img { max-width: 100%; border-radius: 8px; }
+ul, ol { padding-left: 1.5em; margin-bottom: 1.25em; }
+li { margin-bottom: 0.25em; }
+hr { border: none; border-top: 1px solid ${c.border}; margin: 2em 0; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-name, .hljs-tag { color: ${c.accent}; }
+.hljs-string, .hljs-title, .hljs-section, .hljs-attribute, .hljs-literal, .hljs-template-tag, .hljs-template-variable, .hljs-type { color: ${c.codeColor}; }
+.hljs-number, .hljs-regexp, .hljs-symbol, .hljs-bullet, .hljs-link { color: ${c.accentHover}; }
+.hljs-comment, .hljs-doctag, .hljs-meta { color: ${c.textMuted}; font-style: italic; }
+.hljs-deletion { color: #ef4444; } .hljs-addition { color: #22c55e; }
+.hljs-emphasis { font-style: italic; } .hljs-strong { font-weight: 700; }
+${pdfPageCSS}
+</style>
+</head>
+<body>${renderedHTML}</body>
+</html>`;
+}
+
+async function exportHTML() {
+  const tab = getActiveTab();
+  if (!tab) return;
+  try {
+    const htmlName = (isUntitled(tab) ? t('untitled') : tab.name.replace(/\.(md|markdown|mkd|txt)$/i, '')) + '.html';
+    const savePath = await SaveHTMLDialog(htmlName);
+    if (!savePath) return;
+    const fullHTML = buildExportHTML(tab);
+    await SaveFileAt(savePath, fullHTML);
+    showToast(t('toast.exported'));
+  } catch { showToast(t('toast.errorSave')); }
+}
+
+async function exportPDF() {
+  const tab = getActiveTab();
+  if (!tab) return;
+  try {
+    const pdfName = (isUntitled(tab) ? t('untitled') : tab.name.replace(/\.(md|markdown|mkd|txt)$/i, '')) + '.pdf';
+    const savePath = await SavePDFDialog(pdfName);
+    if (!savePath) return;
+    showToast(t('toast.exportingPDF'));
+    const html = buildExportHTML(tab, { forceLight: true, forPDF: true });
+    await ExportPDF(savePath, html);
+    showToast(t('toast.exported'));
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    if (msg.includes('no_browser')) {
+      showToast(t('toast.noBrowser'));
+      window.print();
+    } else {
+      showToast(t('toast.errorSave'));
+    }
+  }
 }
 
 function selectAll() {
@@ -976,12 +1561,12 @@ function printDocument() {
 }
 
 function hasAnyUnsavedChanges(): boolean {
-  return tabs.some(tab => tab.rawContent !== tab.savedContent);
+  return tabs.some(isTabDirty);
 }
 
 function confirmQuit() {
   if (!hasAnyUnsavedChanges()) { Quit(); return; }
-  const dirtyCount = tabs.filter(t => t.rawContent !== t.savedContent).length;
+  const dirtyCount = tabs.filter(isTabDirty).length;
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -1004,8 +1589,16 @@ function confirmQuit() {
   overlay.querySelector('#cq-cancel')?.addEventListener('click', close);
   overlay.querySelector('#cq-save')?.addEventListener('click', async () => {
     for (const tab of tabs) {
-      if (tab.rawContent !== tab.savedContent) {
-        try { await SaveFileAt(tab.path, tab.rawContent); } catch { /* best effort */ }
+      if (isTabDirty(tab)) {
+        try {
+          if (isUntitled(tab)) {
+            const newPath = await SaveMarkdownDialog(`${t('untitled')}.md`);
+            if (!newPath) continue;
+            await SaveFileAt(newPath, tab.rawContent);
+          } else {
+            await SaveFileAt(tab.path, tab.rawContent);
+          }
+        } catch { /* best effort */ }
       }
     }
     close(); Quit();
@@ -1013,8 +1606,15 @@ function confirmQuit() {
 }
 
 async function toggleFullscreen() {
-  if (isFullscreen) WindowUnfullscreen(); else WindowFullscreen();
-  isFullscreen = !isFullscreen;
+  if (isFullscreen) {
+    WindowUnfullscreen();
+    isFullscreen = false;
+    appEl.classList.remove('fullscreen-zen');
+  } else {
+    WindowFullscreen();
+    isFullscreen = true;
+    if (!fullscreenShowUI) appEl.classList.add('fullscreen-zen');
+  }
 }
 
 // ─── Modals ─────────────────────────────────────────────
@@ -1037,6 +1637,7 @@ function showShortcuts() {
     <table class="shortcuts-table">
       <tr><td><kbd>Ctrl+O</kbd></td><td>${t('shortcuts.open')}</td></tr>
       <tr><td><kbd>Ctrl+S</kbd></td><td>${t('shortcuts.save')}</td></tr>
+      <tr><td><kbd>Ctrl+F</kbd></td><td>${t('shortcuts.find')}</td></tr>
       <tr><td><kbd>Ctrl+P</kbd></td><td>${t('shortcuts.print')}</td></tr>
       <tr><td><kbd>Ctrl+Q</kbd></td><td>${t('shortcuts.quit')}</td></tr>
       <tr><td><kbd>Ctrl+W</kbd></td><td>${t('shortcuts.closeTab')}</td></tr>
@@ -1131,7 +1732,21 @@ function showSettings() {
           </button>`;
         }).join('')}
       </div>
+    </div>
+    <div class="settings-section" style="margin-top:20px;">
+      <label class="settings-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="settings-fs-ui" ${fullscreenShowUI ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--accent);cursor:pointer;">
+        ${t('settings.fullscreenShowUI')}
+      </label>
     </div>`);
+
+  overlay.querySelector('#settings-fs-ui')?.addEventListener('change', (e) => {
+    fullscreenShowUI = (e.target as HTMLInputElement).checked;
+    savePrefs();
+    if (isFullscreen) {
+      appEl.classList.toggle('fullscreen-zen', !fullscreenShowUI);
+    }
+  });
 
   overlay.querySelectorAll('[data-locale]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1151,8 +1766,240 @@ function showSettings() {
   });
 }
 
+// ─── Search Controller (DOM-preserving) ────────────────
+type SearchResult = HTMLElement | [number, number];
+
+const SEARCH_RESULT_LIMIT = 2000;
+const searchState = {
+  isActive: false,
+  query: '',
+  results: [] as SearchResult[],
+  currentIndex: -1,
+};
+
+function renderSearchBar() {
+  let bar = document.getElementById('search-bar');
+  if (!bar) {
+    bar = document.createElement('div');
+    bar.id = 'search-bar';
+    bar.className = 'search-bar';
+    bar.innerHTML = `
+      <input type="text" id="search-input" class="search-input" placeholder="${t('search.placeholder')}" spellcheck="false">
+      <span id="search-count" class="search-count">0 / 0</span>
+      <div class="search-divider"></div>
+      <button class="search-btn" id="search-prev" title="Anterior (Shift+Enter)">↑</button>
+      <button class="search-btn" id="search-next" title="Siguiente (Enter)">↓</button>
+      <button class="search-btn" id="search-close" title="Cerrar (Esc)">✕</button>
+    `;
+    const app = document.getElementById('app');
+    const statusBar = document.getElementById('status-bar');
+    if (app && statusBar) app.insertBefore(bar, statusBar);
+    else app?.appendChild(bar);
+
+    const input = document.getElementById('search-input') as HTMLInputElement;
+    input.addEventListener('input', () => {
+      searchState.query = input.value;
+      executeSearch();
+    });
+    input.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        navigateSearch(e.shiftKey ? -1 : 1, false, true);
+      } else if (e.key === 'Escape') {
+        e.preventDefault();
+        closeSearch();
+      }
+    });
+    document.getElementById('search-prev')?.addEventListener('click', () => navigateSearch(-1));
+    document.getElementById('search-next')?.addEventListener('click', () => navigateSearch(1));
+    document.getElementById('search-close')?.addEventListener('click', () => closeSearch());
+  }
+}
+
+function openSearch() {
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  renderSearchBar();
+  const bar = document.getElementById('search-bar');
+  const input = document.getElementById('search-input') as HTMLInputElement | null;
+  if (!bar || !input) return;
+
+  let selection = '';
+  if (tab.mode === 'edit') {
+    const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
+    if (editor && editor.selectionStart !== editor.selectionEnd) {
+      selection = editor.value.substring(editor.selectionStart, editor.selectionEnd);
+    }
+  } else {
+    selection = window.getSelection()?.toString() || '';
+  }
+
+  searchState.isActive = true;
+  bar.classList.add('visible');
+
+  if (selection && selection.length < 100 && !selection.includes('\n')) {
+    input.value = selection;
+    searchState.query = selection;
+  }
+
+  input.select();
+  input.focus();
+  executeSearch();
+}
+
+function closeSearch() {
+  searchState.isActive = false;
+  document.getElementById('search-bar')?.classList.remove('visible');
+  clearHighlights();
+
+  const tab = getActiveTab();
+  if (tab?.mode === 'edit') {
+    document.getElementById('editor')?.focus();
+  }
+}
+
+function clearHighlights() {
+  searchState.results = [];
+  searchState.currentIndex = -1;
+  updateSearchUI();
+
+  const prose = document.getElementById('prose-content');
+  if (!prose) return;
+
+  prose.querySelectorAll('mark').forEach(mark => {
+    const parent = mark.parentNode;
+    if (!parent) return;
+    parent.replaceChild(document.createTextNode(mark.textContent || ''), mark);
+    parent.normalize();
+  });
+}
+
+function executeSearch() {
+  clearHighlights();
+  if (!searchState.query.trim()) return;
+
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  if (tab.mode === 'view') {
+    const prose = document.getElementById('prose-content');
+    if (!prose) return;
+
+    const walker = document.createTreeWalker(prose, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      textNodes.push(node as Text);
+    }
+
+    const query = searchState.query.toLowerCase();
+    const marks: HTMLElement[] = [];
+    let matchCount = 0;
+
+    textNodes.forEach(textNode => {
+      if (matchCount >= SEARCH_RESULT_LIMIT) return;
+      let currentNode = textNode;
+      let text = currentNode.nodeValue || '';
+      let lowerText = text.toLowerCase();
+      let index = lowerText.indexOf(query);
+
+      while (index !== -1 && matchCount < SEARCH_RESULT_LIMIT) {
+        const matchNode = currentNode.splitText(index);
+        currentNode = matchNode.splitText(query.length) as Text;
+
+        const mark = document.createElement('mark');
+        mark.textContent = matchNode.nodeValue;
+        matchNode.parentNode?.replaceChild(mark, matchNode);
+        marks.push(mark);
+        matchCount++;
+
+        text = currentNode.nodeValue || '';
+        lowerText = text.toLowerCase();
+        index = lowerText.indexOf(query);
+      }
+    });
+
+    searchState.results = marks;
+  } else {
+    const regex = new RegExp(escapeRegExp(searchState.query), 'gi');
+    const matches: [number, number][] = [];
+    let match: RegExpExecArray | null;
+    while ((match = regex.exec(tab.rawContent)) !== null && matches.length < SEARCH_RESULT_LIMIT) {
+      matches.push([match.index, match.index + match[0].length]);
+    }
+    searchState.results = matches;
+  }
+
+  if (searchState.results.length > 0) navigateSearch(1, true, true);
+  else updateSearchUI();
+}
+
+function navigateSearch(direction: number, isFirstRun = false, keepSearchFocus = false) {
+  const total = searchState.results.length;
+  if (total === 0) return;
+
+  const tab = getActiveTab();
+  if (!tab) return;
+
+  if (tab.mode === 'view' && searchState.currentIndex >= 0 && searchState.currentIndex < total) {
+    (searchState.results[searchState.currentIndex] as HTMLElement).classList.remove('active');
+  }
+
+  searchState.currentIndex = isFirstRun ? 0 : (searchState.currentIndex + direction + total) % total;
+  updateSearchUI();
+
+  if (tab.mode === 'view') {
+    const mark = searchState.results[searchState.currentIndex] as HTMLElement;
+    mark.classList.add('active');
+    mark.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  } else {
+    const editor = document.getElementById('editor') as HTMLTextAreaElement | null;
+    if (!editor) return;
+    const [start, end] = searchState.results[searchState.currentIndex] as [number, number];
+    editor.setSelectionRange(start, end);
+    if (!keepSearchFocus) editor.focus();
+
+    const textBefore = tab.rawContent.substring(0, start);
+    const lineBreaks = textBefore.split('\n').length;
+    const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 24;
+    editor.scroll({ top: (lineBreaks * lineHeight) - (editor.clientHeight / 2), behavior: 'smooth' });
+
+    if (keepSearchFocus) {
+      const input = document.getElementById('search-input') as HTMLInputElement | null;
+      input?.focus();
+    }
+  }
+}
+
+function updateSearchUI() {
+  const countEl = document.getElementById('search-count');
+  if (!countEl) return;
+  const total = searchState.results.length;
+  if (total === 0) {
+    countEl.textContent = searchState.query ? t('search.noResults') : '0 / 0';
+  } else {
+    countEl.textContent = `${searchState.currentIndex + 1} / ${total === SEARCH_RESULT_LIMIT ? `${SEARCH_RESULT_LIMIT}+` : total}`;
+  }
+}
+
+function syncSearchAfterRender() {
+  if (!searchState.isActive) return;
+  renderSearchBar();
+  document.getElementById('search-bar')?.classList.add('visible');
+  const input = document.getElementById('search-input') as HTMLInputElement | null;
+  if (input && input.value !== searchState.query) input.value = searchState.query;
+  executeSearch();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 // ─── Global Events (bound once) ─────────────────────────
 document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && searchState.isActive) { closeSearch(); return; }
+  if (e.key === 'Escape' && isFullscreen) { toggleFullscreen(); return; }
   if (e.key === 'Escape' && openMenu !== null) { closeMenu(); return; }
 
   const tab = getActiveTab();
@@ -1162,10 +2009,13 @@ document.addEventListener('keydown', (e) => {
   if (e.ctrlKey && e.shiftKey && e.key === 'Z' && tab?.mode === 'edit') { e.preventDefault(); editorRedo(); return; }
   if (e.ctrlKey && e.key === 'b' && tab?.mode === 'edit') { e.preventDefault(); insertMarkdown('bold'); return; }
   if (e.ctrlKey && e.key === 'i' && tab?.mode === 'edit') { e.preventDefault(); insertMarkdown('italic'); return; }
+  if (e.ctrlKey && e.shiftKey && e.key === 'S') { e.preventDefault(); saveAsActiveTab(); return; }
   if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveActiveTab(); }
+  if (e.ctrlKey && e.key === 'n') { e.preventDefault(); newFile(); }
   if (e.ctrlKey && (e.key === '+' || e.key === '=')) { e.preventDefault(); adjustZoom(0.1); }
   if (e.ctrlKey && e.key === '-') { e.preventDefault(); adjustZoom(-0.1); }
   if (e.ctrlKey && e.key === 'e') { e.preventDefault(); toggleMode(); }
+  if (e.ctrlKey && e.key === 'f') { e.preventDefault(); openSearch(); return; }
   if (e.ctrlKey && e.key === '0') { e.preventDefault(); resetZoom(); }
   if (e.ctrlKey && e.key === 'o') { e.preventDefault(); openFileDialog(); }
   if (e.ctrlKey && e.key === 'p') { e.preventDefault(); printDocument(); }
@@ -1187,9 +2037,12 @@ document.addEventListener('wheel', (e) => {
   }
 }, { passive: false });
 
-// Click outside menu closes it
+// Click outside menu/dropdown closes it
 document.addEventListener('click', (e) => {
   if (openMenu !== null && !(e.target as HTMLElement).closest('.menu-item')) closeMenu();
+  if (!(e.target as HTMLElement).closest('.et-dropdown-wrap')) {
+    document.querySelectorAll('.et-dropdown').forEach(d => d.classList.remove('visible'));
+  }
 });
 
 // ─── Context Menu ───────────────────────────────────────
@@ -1230,8 +2083,12 @@ document.addEventListener('contextmenu', (e) => {
     <button class="ctx-item" data-action="selectAll">${locale === 'es' ? 'Seleccionar todo' : 'Select all'}<span class="shortcut">Ctrl+A</span></button>
   `;
 
-  menu.style.left = `${Math.min(e.clientX, window.innerWidth - 220)}px`;
-  menu.style.top = `${Math.min(e.clientY, window.innerHeight - 200)}px`;
+  const menuWidth = 220;
+  const menuHeight = 200;
+  const posX = Math.min(e.clientX, window.innerWidth - menuWidth);
+  const posY = Math.min(e.clientY, window.innerHeight - menuHeight);
+  menu.style.left = `${posX}px`;
+  menu.style.top = `${posY}px`;
   document.body.appendChild(menu);
 
   menu.querySelectorAll('.ctx-item').forEach(btn => {
@@ -1247,7 +2104,7 @@ document.addEventListener('contextmenu', (e) => {
             editor.focus();
             editor.setSelectionRange(editorSelStart, editorSelEnd);
             document.execCommand('insertText', false, '');
-            tab.rawContent = editor.value;
+            setTabContent(tab, editor.value);
           }
           break;
         case 'copy':
@@ -1265,7 +2122,7 @@ document.addEventListener('contextmenu', (e) => {
               editor.focus();
               editor.setSelectionRange(editorSelStart, editorSelEnd);
               document.execCommand('insertText', false, text);
-              tab.rawContent = editor.value;
+              setTabContent(tab, editor.value);
             } catch { /* clipboard denied */ }
           }
           break;
@@ -1288,6 +2145,87 @@ document.addEventListener('drop', (e) => { e.preventDefault(); });
 OnFileDrop((_x: number, _y: number, paths: string[]) => {
   void openPaths(paths);
 }, false);
+
+// ─── Single-instance & File-watcher events ──────────────
+EventsOn('open-paths', (paths: string[]) => {
+  if (Array.isArray(paths) && paths.length > 0) {
+    void openPaths(paths);
+  }
+});
+
+// Conflict banners pending user resolution: tabPath -> 1
+const pendingConflicts = new Set<string>();
+
+async function handleExternalChange(path: string, event: string) {
+  if (isRecentSelfSave(path)) return;
+  const tab = tabs.find(t => t.path === path);
+  if (!tab) return;
+
+  if (event === 'removed') {
+    showToast(t('toast.removed'));
+    if (!isTabDirty(tab)) {
+      // Force dirty so next save uses Save-As
+      tab.savedVersion = -1;
+    }
+    renderActive();
+    return;
+  }
+
+  // Modified
+  const isDirty = isTabDirty(tab);
+  if (!isDirty) {
+    try {
+      const fresh = await ReadFileAt(path);
+      setTabContent(tab, fresh);
+      markTabSaved(tab);
+      showToast(t('toast.reloaded'));
+      renderActive();
+    } catch { /* file may have been removed in race */ }
+    return;
+  }
+
+  // Dirty: show conflict banner (only once per change)
+  if (pendingConflicts.has(path)) return;
+  pendingConflicts.add(path);
+  renderActive();
+}
+
+EventsOn('file-changed', (data: { path: string; event: string }) => {
+  if (!data || !data.path) return;
+  void handleExternalChange(data.path, data.event);
+});
+
+function renderConflictBanner() {
+  const tab = getActiveTab();
+  if (!tab || !pendingConflicts.has(tab.path)) return;
+  const contentArea = document.getElementById('content-area');
+  if (!contentArea || document.getElementById('conflict-banner')) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'conflict-banner';
+  banner.className = 'conflict-banner';
+  banner.innerHTML = `
+    <span class="conflict-icon">⚠</span>
+    <span class="conflict-text"><b>${escapeHtml(tab.name)}</b> ${t('banner.externalChange')}</span>
+    <button class="conflict-btn" id="conflict-reload">${t('banner.reloadFromDisk')}</button>
+    <button class="conflict-btn" id="conflict-keep">${t('banner.keepMyChanges')}</button>
+  `;
+  contentArea.parentElement?.insertBefore(banner, contentArea);
+
+  document.getElementById('conflict-reload')?.addEventListener('click', async () => {
+    try {
+      const fresh = await ReadFileAt(tab.path);
+      setTabContent(tab, fresh);
+      markTabSaved(tab);
+    } catch {}
+    pendingConflicts.delete(tab.path);
+    renderActive();
+  });
+  document.getElementById('conflict-keep')?.addEventListener('click', () => {
+    pendingConflicts.delete(tab.path);
+    renderActive();
+  });
+}
 
 // ─── Init ───────────────────────────────────────────────
 async function init() {
