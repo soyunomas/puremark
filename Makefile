@@ -3,7 +3,9 @@ APP_NAME = puremark
 BIN_DIR = $(HOME)/.local/bin
 DESKTOP_DIR = $(HOME)/.local/share/applications
 
-.PHONY: help build install uninstall dev clean deb
+WAILS_FLAGS = -trimpath -ldflags="-s -w -buildid="
+
+.PHONY: help build build-40 build-41 install install-40 install-41 uninstall dev clean deb deb-40 deb-41 deb-all
 
 help: ## ❓ Muestra este menú de ayuda
 	@echo "Comandos disponibles para $(APP_NAME):"
@@ -11,11 +13,25 @@ help: ## ❓ Muestra este menú de ayuda
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-15s\033[0m %s\n", $$1, $$2}'
 	@echo ""
 
-build: ## 🔨 Compila la aplicación para producción
-	@echo "🔨 Construyendo $(APP_NAME)..."
-	wails build -trimpath -ldflags="-s -w -buildid="
+build: build-40 ## 🔨 Compila por defecto usando webkit2gtk-4.0
 
-install: build ## 📦 Compila e instala la aplicación en el sistema local
+build-40: ## 🔨 Compila para Mint antigua / Ubuntu 22.04 / webkit2gtk-4.0
+	@echo "🔨 Construyendo $(APP_NAME) con webkit2gtk-4.0..."
+	wails build $(WAILS_FLAGS)
+
+build-41: ## 🔨 Compila para Mint nueva / Ubuntu 24.04 / webkit2gtk-4.1
+	@echo "🔨 Construyendo $(APP_NAME) con webkit2gtk-4.1..."
+	wails build -tags webkit2_41 $(WAILS_FLAGS)
+
+install: install-40 ## 📦 Instala por defecto usando webkit2gtk-4.0
+
+install-40: build-40 ## 📦 Compila e instala usando webkit2gtk-4.0
+	$(MAKE) install-files
+
+install-41: build-41 ## 📦 Compila e instala usando webkit2gtk-4.1
+	$(MAKE) install-files
+
+install-files:
 	@echo "📦 Instalando binario..."
 	mkdir -p $(BIN_DIR)
 	cp build/bin/$(APP_NAME) $(BIN_DIR)/$(APP_NAME)
@@ -38,20 +54,26 @@ uninstall: ## 🗑️ Desinstala la aplicación del sistema
 	rm -f $(DESKTOP_DIR)/$(APP_NAME).desktop
 	@echo "✅ ¡Desinstalación completada!"
 
-dev: ## 🚀 Ejecuta la aplicación en modo desarrollo (Live Reload)
+dev: ## 🚀 Ejecuta la aplicación en modo desarrollo
 	wails dev
 
-deb: deb-40 ## 📦 Genera el .deb por defecto (webkit2gtk-4.0 / Mint 21 / Ubuntu 22.04)
+dev-40: ## 🚀 Desarrollo con webkit2gtk-4.0
+	wails dev
 
-deb-40: ## 📦 .deb contra libwebkit2gtk-4.0-37 (Mint 21 / Ubuntu 22.04)
+dev-41: ## 🚀 Desarrollo con webkit2gtk-4.1
+	wails dev -tags webkit2_41
+
+deb: deb-40 ## 📦 Genera el .deb por defecto webkit2gtk-4.0
+
+deb-40: ## 📦 .deb contra libwebkit2gtk-4.0-37
 	@echo "📦 Generando .deb (webkit2gtk-4.0)..."
 	bash build-deb.sh 40
 
-deb-41: ## 📦 .deb contra libwebkit2gtk-4.1-0 (Mint 22 / Ubuntu 24.04)
+deb-41: ## 📦 .deb contra libwebkit2gtk-4.1-0
 	@echo "📦 Generando .deb (webkit2gtk-4.1)..."
 	bash build-deb.sh 41
 
-deb-all: deb-40 deb-41 ## 📦 Genera ambos .deb (4.0 y 4.1)
+deb-all: deb-40 deb-41 ## 📦 Genera ambos .deb
 
 clean: ## 🧹 Limpia los archivos de compilación generados
 	@echo "🧹 Limpiando binarios anteriores..."
